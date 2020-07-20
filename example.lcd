@@ -1,0 +1,46 @@
+# This is a comment - any characters between a '#' and the end of the line
+# are ignored
+
+
+
+
+
+# ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑
+# Whitespace is ignored
+# ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
+
+
+
+
+# this is a declaration
+#     ↓
+float : foo; # ← declarations are in the format type : name;
+#       ↑
+#  types and names
+#  must start with
+#  an alphabetic
+#  character or an
+#  underscore and
+#  must contain
+#  only alphabetic
+#  characters,
+#  numeric
+#  characters or
+#  underscores
+
+struct : bar # declarations with the type 'struct' must be followed by a
+             # curly bracket block containing member fields.
+{
+    float : member1;
+
+#
+#   the number of
+#   '*' present
+#   after a type
+#   represents
+#   the level of
+#   indirection.
+#        ↓
+    char *: member2;
+}
+
