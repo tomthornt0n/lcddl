@@ -2,21 +2,21 @@
 #define LCDDL_H
 
 
-typedef struct node_t node_t;
-struct node_t
+typedef struct lcddlNode_t lcddlNode_t;
+struct lcddlNode_t
 {
     char Name[32];
     char Type[32];
     int IndirectionLevel;
 
-    node_t *Next;
+    lcddlNode_t *Next;
 
-    node_t *Child;
-    node_t *Parent;
+    lcddlNode_t *Child;
+    lcddlNode_t *Parent;
 };
 
 void lcddlUserInitCallback(void);
-void lcddlUserTopLevelCallback(node_t *node);
+void lcddlUserTopLevelCallback(lcddlNode_t *node);
 void lcddlUserCleanupCallback(void);
 
 #endif

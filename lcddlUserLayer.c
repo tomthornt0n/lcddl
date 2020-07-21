@@ -19,7 +19,7 @@ void lcddlUserInitCallback(void)
     fprintf(stderr, "LCDDL Init Callback\n");
 }
 
-void lcddlUserTopLevelCallback(node_t *node)
+void lcddlUserTopLevelCallback(lcddlNode_t *node)
 {
     /* Called for every 'top level' node */
     fprintf(stderr, "%s: %s\n", node->Type, node->Name);
