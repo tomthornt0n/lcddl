@@ -363,42 +363,46 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
 
 int main(int argc, char **argv)
 {
-    lcddlLexerInputStream_t file;
-    lcddl_ReadFile(argv[1], &file);
-
     lcddlUserInitCallback();
 
-    lcddlNode_t *ast = lcddl_Parse(&file);
-
-    lcddlNode_t *node = ast;
-    lcddlUserTopLevelCallback(node);
-    while (node->Next)
+    int i;
+    for (i = 1; i < argc; ++i)
     {
-        node = node->Next;
+        lcddlLexerInputStream_t file;
+        lcddl_ReadFile(argv[i], &file);
+
+        lcddlNode_t *ast = lcddl_Parse(&file);
+
+        lcddlNode_t *node = ast;
         lcddlUserTopLevelCallback(node);
-    }
-
-    node = ast;
-    while (node)
-    {
-        lcddlNode_t *prev = node;
-        node = node->Next;
-
-        if (prev->Child)
+        while (node->Next)
         {
-            lcddlNode_t *child = prev->Child;
-            while (child)
-            {
-                lcddlNode_t *childPrev = child;
-                child = child->Next;
-                free(childPrev);
-            }
+            node = node->Next;
+            lcddlUserTopLevelCallback(node);
         }
 
-        free(prev);
-    }
+        node = ast;
+        while (node)
+        {
+            lcddlNode_t *prev = node;
+            node = node->Next;
 
-    free(file.ContentsStart);
+            if (prev->Child)
+            {
+                lcddlNode_t *child = prev->Child;
+                while (child)
+                {
+                    lcddlNode_t *childPrev = child;
+                    child = child->Next;
+                    free(childPrev);
+                }
+            }
+
+            free(prev);
+        }
+
+        free(file.ContentsStart);
+    }
 
     lcddlUserCleanupCallback();
 }

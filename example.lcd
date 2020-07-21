@@ -28,10 +28,17 @@ float : foo; # ← declarations are in the format type : name;
 #  characters or
 #  underscores
 
-struct : bar # declarations with the type 'struct' must be followed by a
-             # curly bracket block containing member fields.
-{
+struct : bar #   declarations with the type 'struct' must be followed by a
+{            # ← curly bracket block containing member fields.
     float : member1;
+#             ↑
+#       types and names
+#       should not exceed
+#       31 characters in
+#       length. Any
+#       additional
+#       characters will
+#       be ignored.
 
 #
 #   the number of
