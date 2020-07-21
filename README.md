@@ -14,7 +14,7 @@ See `example.lcd` for more info.
 Fill out the functions in `lcddlUserLayer.c`.
 #### 3. Build LCDDL
 * with GCC: `gcc lcddl.c lcddlUserLayer.c -o lcddl`
-* with Visual Studio: `cl lcddl.c lcddlUserLayer.c /link /out lcddl.exe`
+* with Visual Studio: `cl lcddl.c lcddlUserLayer.c /link /out:lcddl.exe`
 #### 4. Run LCDDL
 * *nix: `./lcddl path/to/input/file.lcd`
 * windows: `lcddl path/to/input/file.lcd`
