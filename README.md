@@ -1,7 +1,7 @@
 # LCDDL
 _LCDDL_ is a simple utility which parses a minimal data description format.
 Once a data layout has been extracted from the input file, a corresponding
-tree is constructed and sent to the user code bellow.
+tree is constructed and sent to the user code.
 The tree is arranged as a linked list of _top level_ nodes, with structs
 containing a separate list of _child_ nodes.
 Each node in the tree consists of a `Name`, a `Type` and an `IndirectionLevel`,

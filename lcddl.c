@@ -50,7 +50,7 @@ static void lcddl_ReadFile(char *filename, lcddlLexerInputStream_t *result)
     if (f == NULL)
     {
         result->Contents = NULL;
-        fprintf(stderr, "\x1b[31mERROR: could not open file\x1b[0m");
+        fprintf(stderr, "\x1b[31mERROR: could not open file\x1b[0m\n");
         lcddlUserCleanupCallback();
         exit(-1);
     }
@@ -61,7 +61,7 @@ static void lcddl_ReadFile(char *filename, lcddlLexerInputStream_t *result)
     if (size != fread(result->Contents, sizeof(char), size, f))
     {
         free(result->Contents);
-        fprintf(stderr, "\x1b[31mERROR: could not open file\x1b[0m");
+        fprintf(stderr, "\x1b[31mERROR: could not open file\x1b[0m\n");
         lcddlUserCleanupCallback();
         exit(-1);
     }
@@ -263,7 +263,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
             if (token.Type != LCDDL_TOKEN_TYPE_COLON &&
                 token.Type != LCDDL_TOKEN_TYPE_ASTERIX)
             {
-                fprintf(stderr, "Expected a colon or asterix.");
+                fprintf(stderr, "Expected a colon or asterix.\n");
                 lcddlUserCleanupCallback();
                 exit(-1);
             }
@@ -272,7 +272,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
                 node->IndirectionLevel = token.Value.IndirectionLevel;
                 if (lcddl_GetToken(stream).Type != LCDDL_TOKEN_TYPE_COLON)
                 {
-                    fprintf(stderr, "Expected a colon.");
+                    fprintf(stderr, "Expected a colon.\n");
                     lcddlUserCleanupCallback();
                     exit(-1);
                 }
@@ -285,7 +285,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
             lcddlToken_t identifier = lcddl_GetToken(stream);
             if (identifier.Type != LCDDL_TOKEN_TYPE_IDENTIFIER)
             {
-                fprintf(stderr, "Expected an identifier.");
+                fprintf(stderr, "Expected an identifier.\n");
                 lcddlUserCleanupCallback();
                 exit(-1);
             }
@@ -320,14 +320,14 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
             {
                 if (parent != NULL)
                 {
-                    fprintf(stderr, "Nested structs are not allowed.");
+                    fprintf(stderr, "Nested structs are not allowed.\n");
                     lcddlUserCleanupCallback();
                     exit(-1);
                 }
                 if (lcddl_GetToken(stream).Type != LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET)
                 {
                     fprintf(stderr, "Struct declarations must be followed by a"
-                                    "curly bracket block.");
+                                    "curly bracket block.\n");
                     lcddlUserCleanupCallback();
                     exit(-1);
                 }
@@ -337,7 +337,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
             {
                 if(lcddl_GetToken(stream).Type != LCDDL_TOKEN_TYPE_SEMICOLON)
                 {
-                    fprintf(stderr, "Expected a semicolon");
+                    fprintf(stderr, "Expected a semicolon.\n");
                     lcddlUserCleanupCallback();
                     exit(-1);
                 }
@@ -349,7 +349,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
         }
         else
         {
-            fprintf(stderr, "ERROR: unexpected token %s",
+            fprintf(stderr, "ERROR: unexpected token %s.\n",
                     lcddl_TokenTypeToString(token.Type));
             lcddlUserCleanupCallback();
             exit(-1);
