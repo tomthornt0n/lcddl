@@ -1,6 +1,8 @@
 #ifndef LCDDL_H
 #define LCDDL_H
 
+#include <stdint.h>
+
 typedef struct lcddlAnnotation_t lcddlAnnotation_t;
 struct lcddlAnnotation_t
 {
@@ -24,5 +26,8 @@ struct lcddlNode_t
 void lcddlUserInitCallback(void);
 void lcddlUserTopLevelCallback(lcddlNode_t *node);
 void lcddlUserCleanupCallback(void);
+
+void lcddl_WriteStructToFileAsC(FILE *file, lcddlNode_t *node);
+uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag);
 
 #endif

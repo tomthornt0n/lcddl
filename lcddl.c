@@ -462,3 +462,40 @@ int main(int argc, char **argv)
     lcddlUserCleanupCallback();
 }
 
+/*****************************************************************/
+/* utility functions to assist introspection and code generation */
+/*****************************************************************/
+
+void lcddl_WriteStructToFileAsC(FILE *file, lcddlNode_t *node)
+{
+    fprintf(file, "typedef struct %s %s;\n", node->Name, node->Name);
+    fprintf(file, "struct %s\n{\n", node->Name);
+
+    lcddlNode_t *member;
+    for (member = node->Children;
+         member;
+         member = member->Next)
+    {
+        fprintf(file, "    %s ", member->Type);
+
+        int i;
+        for (i = 0; i < member->IndirectionLevel; ++i)
+            fprintf(file, "*");
+
+        fprintf(file, "%s;\n", member->Name);
+    }
+
+    fprintf(file, "};\n\n");
+}
+
+uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag)
+{
+    lcddlAnnotation_t *annotation;
+    for (annotation = node->Tags;
+         annotation;
+         annotation = annotation->Next)
+    {
+        return !strcmp(annotation->Tag, tag);
+    }
+    return 0;
+}
