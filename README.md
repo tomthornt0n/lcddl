@@ -1,11 +1,8 @@
 # LCDDL
-_LCDDL_ is a simple utility which parses a minimal data description format.
-Once a data layout has been extracted from the input file, a corresponding
-tree is constructed and sent to the user code.
-The tree is arranged as a linked list of _top level_ nodes, with structs
-containing a separate list of _child_ nodes.
-Each node in the tree consists of a `Name`, a `Type` and an `IndirectionLevel`,
-which can be introspected upon when lcddl is run.
+_LCDDL_ is a simple utility which which parses a minimal data-description
+format to construct a corresponding abstract syntax tree, which may be
+introspected upon by user layer code in order to perform compile-time code
+generation, or any other task for which this utility may be suited.
 _LCDDL_ is part of [lucerna](https://github.com/tomthornt0n/lucerna).
 ## Usage
 #### 1. Write an input file
@@ -16,5 +13,5 @@ Fill out the functions in `lcddlUserLayer.c`.
 * with GCC: `gcc lcddl.c lcddlUserLayer.c -o lcddl`
 * with Visual Studio: `cl lcddl.c lcddlUserLayer.c /link /out:lcddl.exe`
 #### 4. Run LCDDL
-* *nix: `./lcddl path/to/input/file.lcd`
-* windows: `lcddl path/to/input/file.lcd`
+> multiple input files may be provided
+`./lcddl path/to/input/file.lcd`

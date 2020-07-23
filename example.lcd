@@ -1,18 +1,18 @@
 # This is a comment - any characters between a '#' and the end of the line
-# are ignored
+# are ignored.
 
 
 
 
 
-# ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑
-# Whitespace is ignored
-# ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
+# ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑
+# Whitespace is ignored.
+# ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
 
 
 
 
-# this is a declaration
+# this is a declaration.
 #     ↓
 float : foo; # ← declarations are in the format type : name;
 #       ↑
@@ -26,8 +26,19 @@ float : foo; # ← declarations are in the format type : name;
 #  characters,
 #  numeric
 #  characters or
-#  underscores
+#  underscores.
 
+# this is an
+# annotation.
+# They can
+# be used to
+# provide
+# extra
+# information
+# to the
+# user layer.
+#    ↓
+@annotation
 struct : bar #   declarations with the type 'struct' must be followed by a
 {            # ← curly bracket block containing member fields.
     float : member1;
@@ -41,13 +52,26 @@ struct : bar #   declarations with the type 'struct' must be followed by a
 #       be ignored.
 
 #
-#   the number of
-#   '*' present
-#   after a type
-#   represents
-#   the level of
-#   indirection.
-#        ↓
-    char *: member2;
+#               the number of
+#               '*' present
+#               after a type
+#               represents
+#               the level of
+#               indirection.
+#                    ↓
+    @tag1 @tag2 char *: member2;
+#         ↑
+#   you can add
+#   as many
+#   annotations
+#   as you like
+#   to a
+#   declaration.
+#   Annotations
+#   also should
+#   not exceed
+#   31
+#   characters
+#   in length.
 }
 

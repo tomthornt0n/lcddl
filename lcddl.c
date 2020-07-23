@@ -18,7 +18,9 @@ enum
     LCDDL_TOKEN_TYPE_SEMICOLON,
     LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET,
     LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET,
-    LCDDL_TOKEN_TYPE_ASTERIX
+    LCDDL_TOKEN_TYPE_ASTERIX,
+    LCDDL_TOKEN_TYPE_AT,
+    LCDDL_TOKEN_TYPE_ANNOTATION
 };
 
 typedef struct lcddlToken_t lcddlToken_t;
@@ -110,12 +112,11 @@ static char *lcddl_TokenTypeToString(int type)
     }
 }
 
-static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
+static lcddlToken_t
+lcddl_GetToken(lcddlLexerInputStream_t *stream)
 {
     char lastChar = lcddl_ConsumeChar(stream);
 
-    int identifierLength = 1;
-    char *identifier = malloc(sizeof*identifier);
 
     /* skip over white space */
     while (isspace((unsigned char) lastChar))
@@ -124,7 +125,6 @@ static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
         if (lastChar == -1)
         {
             lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_EOF };
-            free(identifier);
             return token;
         }
     }
@@ -133,6 +133,9 @@ static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
         lastChar == '_')
     {
         lcddlToken_t token;
+
+        int identifierLength = 1;
+        char *identifier = malloc(sizeof*identifier);
 
         identifier[identifierLength - 1] = lastChar;
         identifier = realloc(identifier, ++identifierLength *
@@ -165,6 +168,12 @@ static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
             stream->PreviousTokenType = LCDDL_TOKEN_TYPE_IDENTIFIER;
             return token;
         }
+        else if (stream->PreviousTokenType == LCDDL_TOKEN_TYPE_AT)
+        {
+            token.Type = LCDDL_TOKEN_TYPE_ANNOTATION;
+            stream->PreviousTokenType = LCDDL_TOKEN_TYPE_ANNOTATION;
+            return token;
+        }
         else
         {
             token.Type = LCDDL_TOKEN_TYPE_TYPENAME;
@@ -178,7 +187,6 @@ static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
                           .Value.String = ":"
                         };
         stream->PreviousTokenType = LCDDL_TOKEN_TYPE_COLON;
-        free(identifier);
         return token;
     }
     else if (lastChar == ';')
@@ -187,51 +195,53 @@ static lcddlToken_t lcddl_GetToken(lcddlLexerInputStream_t *stream)
                           .Value.String = ";"
                         };
         stream->PreviousTokenType = LCDDL_TOKEN_TYPE_SEMICOLON;
-        free(identifier);
         return token;
     }
     else if (lastChar == '{')
     {
         lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET,
-                          .Value.String = "{"
+                               .Value.String = "{"
                         };
         stream->PreviousTokenType = LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET;
-        free(identifier);
         return token;
     }
     else if (lastChar == '}')
     {
         lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET,
-                          .Value.String = "}"
+                               .Value.String = "}"
                         };
         stream->PreviousTokenType = LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET;
-        free(identifier);
         return token;
     }
     else if (lastChar == '*')
     {
         lcddlToken_t token = {.Type = LCDDL_TOKEN_TYPE_ASTERIX,
-                         .Value.IndirectionLevel = 1
+                              .Value.IndirectionLevel = 1
                         };
         while(stream->Contents[0] == '*')
         {
             lastChar = lcddl_ConsumeChar(stream);
             ++token.Value.IndirectionLevel;
         }
-        free(identifier);
+        return token;
+    }
+    else if (lastChar == '@')
+    {
+        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_AT,
+                               .Value.String = "@"
+                        };
+        stream->PreviousTokenType = LCDDL_TOKEN_TYPE_AT;
         return token;
     }
     else if (lastChar == '#')
     {
-        do continue; while ((lastChar = lcddl_ConsumeChar(stream)) != '\n');
-        free(identifier);
+        for (;(lastChar = lcddl_ConsumeChar(stream)) != '\n';);
         return lcddl_GetToken(stream);
     }
     else
     {
         fprintf(stderr, "%c", lastChar);
         lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_UNKNOWN, .Value = "ERROR" };
-        free(identifier);
         return token;
     }
 
@@ -244,17 +254,49 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
 
     lcddlNode_t *parent = NULL;
 
-    lcddlToken_t token;
-    token = lcddl_GetToken(stream);
-    while (token.Type != LCDDL_TOKEN_TYPE_EOF)
+    lcddlAnnotation_t *annotations = NULL;
+
+    lcddlToken_t token = lcddl_GetToken(stream);
+    for (; token.Type != LCDDL_TOKEN_TYPE_EOF; token = lcddl_GetToken(stream))
     {
-        if (token.Type == LCDDL_TOKEN_TYPE_TYPENAME)
+        if (token.Type == LCDDL_TOKEN_TYPE_AT)
+        {
+            token = lcddl_GetToken(stream);
+            if (token.Type != LCDDL_TOKEN_TYPE_ANNOTATION)
+            {
+                fprintf(stderr, "Expected an annotation");
+                lcddlUserCleanupCallback();
+                exit(-1);
+            }
+
+            lcddlAnnotation_t *annotation = malloc(sizeof(lcddlAnnotation_t));
+            annotation->Next = NULL;
+            memcpy(annotation->Tag,
+                   token.Value.String, 32);
+
+            if (!(annotations))
+            {
+                annotations = annotation;
+            }
+            else
+            {
+                lcddlAnnotation_t *head;
+                for (head = annotations;
+                     head->Next;
+                     head = head->Next);
+
+                head->Next = annotation;
+            }
+        }
+        else if (token.Type == LCDDL_TOKEN_TYPE_TYPENAME)
         {
             lcddlNode_t *node = malloc(sizeof *node);
 
-            node->Parent = parent;
-            node->Child = NULL;
+            node->Children = NULL;
             node->Next = NULL;
+
+            node->Tags = annotations;
+            annotations = NULL;
 
             memcpy(node->Type,
                    token.Value.String, 32);
@@ -295,15 +337,17 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
 
             if (parent)
             {
-                if (!(parent->Child))
+                if (!(parent->Children))
                 {
-                    parent->Child = node;
+                    parent->Children = node;
                 }
                 else
                 {
-                    lcddlNode_t *head = parent->Child;
-                    while (head->Next)
-                        head = head->Next;
+                    lcddlNode_t *head;
+                    for (head = parent->Children;
+                         head->Next;
+                         head = head->Next);
+
                     head->Next = node;
                 }
             }
@@ -355,7 +399,7 @@ static lcddlNode_t *lcddl_Parse(lcddlLexerInputStream_t *stream)
             exit(-1);
         }
 
-        token = lcddl_GetToken(stream);
+        
     }
 
     return topLevelFirst;
@@ -387,14 +431,25 @@ int main(int argc, char **argv)
             lcddlNode_t *prev = node;
             node = node->Next;
 
-            if (prev->Child)
+            if (prev->Children)
             {
-                lcddlNode_t *child = prev->Child;
+                lcddlNode_t *child = prev->Children;
                 while (child)
                 {
                     lcddlNode_t *childPrev = child;
                     child = child->Next;
                     free(childPrev);
+                }
+            }
+
+            if (prev->Tags)
+            {
+                lcddlAnnotation_t *tag = prev->Tags;
+                while (tag)
+                {
+                    lcddlAnnotation_t *tagPrev = tag;
+                    tag = tag->Next;
+                    free(tagPrev);
                 }
             }
 

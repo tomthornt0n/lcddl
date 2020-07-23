@@ -1,6 +1,12 @@
 #ifndef LCDDL_H
 #define LCDDL_H
 
+typedef struct lcddlAnnotation_t lcddlAnnotation_t;
+struct lcddlAnnotation_t
+{
+    char Tag[32];
+    lcddlAnnotation_t *Next;
+};
 
 typedef struct lcddlNode_t lcddlNode_t;
 struct lcddlNode_t
@@ -10,9 +16,9 @@ struct lcddlNode_t
     int IndirectionLevel;
 
     lcddlNode_t *Next;
+    lcddlNode_t *Children;
 
-    lcddlNode_t *Child;
-    lcddlNode_t *Parent;
+    lcddlAnnotation_t *Tags;
 };
 
 void lcddlUserInitCallback(void);
