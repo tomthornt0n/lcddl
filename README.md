@@ -13,5 +13,4 @@ Fill out the functions in `lcddlUserLayer.c`.
 * with GCC: `gcc lcddl.c lcddlUserLayer.c -o lcddl`
 * with Visual Studio: `cl lcddl.c lcddlUserLayer.c /link /out:lcddl.exe`
 #### 4. Run LCDDL
-> multiple input files may be provided
-`./lcddl path/to/input/file.lcd`
+`./lcddl path/to/input/file1.lcd path/to/input/file2.lcd ...`
