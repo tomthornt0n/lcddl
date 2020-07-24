@@ -564,7 +564,8 @@ uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag)
          annotation;
          annotation = annotation->Next)
     {
-        if (0 == strcmp(annotation->Tag, tag)) return 1;
+        /* increment the annotation's string to ignore the '@' symbol */
+        if (0 == strcmp(annotation->Tag + 1, tag)) return 1;
     }
     return 0;
 }
