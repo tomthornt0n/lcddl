@@ -15,7 +15,8 @@ struct lcddlNode_t
 {
     char Name[32];
     char Type[32];
-    int IndirectionLevel;
+    uint32_t IndirectionLevel;
+    uint32_t ArrayCount;
 
     lcddlNode_t *Next;
     lcddlNode_t *Children;
@@ -27,7 +28,7 @@ void lcddlUserInitCallback(void);
 void lcddlUserTopLevelCallback(lcddlNode_t *node);
 void lcddlUserCleanupCallback(void);
 
-void lcddl_WriteStructToFileAsC(FILE *file, lcddlNode_t *node);
+void lcddl_WriteNodeToFileAsC(FILE *file, lcddlNode_t *node);
 uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag);
 
 #endif

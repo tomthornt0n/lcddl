@@ -28,6 +28,23 @@ float : foo; # ← declarations are in the format type : name;
 #  characters or
 #  underscores.
 
+# [n] can be used
+# to declare an
+# array, where n
+# is a positivie
+# integer.
+# All declarations
+# are treated as
+# arrays, with
+# an array size
+# of 1 by default.
+#      ↓
+double[32] : array;
+#       ↑
+# 'type *[n]' is legal,
+#  however, 'type[n] *'
+#  is not.
+
 # this is an
 # annotation.
 # They can
@@ -38,7 +55,7 @@ float : foo; # ← declarations are in the format type : name;
 # to the
 # user layer.
 #    ↓
-@annotation
+@annotation1
 struct : bar #   declarations with the type 'struct' must be followed by a
 {            # ← curly bracket block containing member fields.
     float : member1;
@@ -59,7 +76,7 @@ struct : bar #   declarations with the type 'struct' must be followed by a
 #               the level of
 #               indirection.
 #                    ↓
-    @tag1 @tag2 char *: member2;
+    @annotation2 @annotation3 char *: member2;
 #         ↑
 #   you can add
 #   as many

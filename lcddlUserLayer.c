@@ -9,9 +9,9 @@
    tree is constructed and sent to the user code.
    
    The tree is arranged as a linked list of 'top level' nodes, each of which
-   contains a Name, a Type, a IndirectionLevel, a pointer, which may be NULL,
-   to a linked list of child nodes, and a pointer, which may be NULL, to a
-   linked list of annotations.
+   contains a Name, a Type, an IndirectionLevel, an ArrayCount, a pointer, 
+   which may be NULL, to a linked list of child nodes, and a pointer, which may
+   be NULL, to a linked list of annotations.
 
    lcddlNode_t is defined as:
 
@@ -21,6 +21,7 @@
          char Name[32];
          char Type[32];
          int IndirectionLevel;
+         int ArrayCount;
     
          lcddlNode_t *Next;
          lcddlNode_t *Children;
@@ -38,18 +39,36 @@
     };
 */
 
+FILE *file;
+
 void lcddlUserInitCallback(void)
 {
     /* Called once at when lcddl is run. */
+    file = fopen("test.txt", "w");
 }
 
 void lcddlUserTopLevelCallback(lcddlNode_t *node)
 {
     /* Called for every 'top level' node */
+    lcddlAnnotation_t *tag;
+    for (tag = node->Tags;
+         tag;
+         fprintf(stderr, "%s, ",
+         tag->Tag), tag = tag->Next);
+
+    fprintf(stderr,
+            "%s[%u] %u*: %s\n",
+            node->Type,
+            node->ArrayCount,
+            node->IndirectionLevel,
+            node->Name);
+
+    lcddl_WriteNodeToFileAsC(file, node);
 }
 
 void lcddlUserCleanupCallback(void)
 {
     /* called just before the program exits */
+    fclose(file);
 }
 
