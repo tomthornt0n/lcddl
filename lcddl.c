@@ -564,7 +564,7 @@ uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag)
          annotation;
          annotation = annotation->Next)
     {
-        return !strcmp(annotation->Tag, tag);
+        if (0 == strcmp(annotation->Tag, tag)) return 1;
     }
     return 0;
 }

@@ -39,36 +39,18 @@
     };
 */
 
-FILE *file;
-
 void lcddlUserInitCallback(void)
 {
     /* Called once at when lcddl is run. */
-    file = fopen("test.txt", "w");
 }
 
 void lcddlUserTopLevelCallback(lcddlNode_t *node)
 {
     /* Called for every 'top level' node */
-    lcddlAnnotation_t *tag;
-    for (tag = node->Tags;
-         tag;
-         fprintf(stderr, "%s, ",
-         tag->Tag), tag = tag->Next);
-
-    fprintf(stderr,
-            "%s[%u] %u*: %s\n",
-            node->Type,
-            node->ArrayCount,
-            node->IndirectionLevel,
-            node->Name);
-
-    lcddl_WriteNodeToFileAsC(file, node);
 }
 
 void lcddlUserCleanupCallback(void)
 {
     /* called just before the program exits */
-    fclose(file);
 }
 
