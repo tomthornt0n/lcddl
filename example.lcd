@@ -68,14 +68,13 @@ struct : bar #   declarations with the type 'struct' must be followed by a
 #       characters will
 #       be ignored.
 
-#
-#               the number of
-#               '*' present
-#               after a type
-#               represents
-#               the level of
-#               indirection.
-#                    ↓
+#                             the number of
+#                             '*' present
+#                             after a type
+#                             represents
+#                             the level of
+#                             indirection.
+#                                  ↓
     @annotation2 @annotation3 char *: member2;
 #         ↑
 #   you can add
