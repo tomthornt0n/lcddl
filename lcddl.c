@@ -56,7 +56,7 @@ typedef struct
 } lcddlToken_t;
 
 static char *
-lcddl_TokenTypeToString(int type)
+lcddlTokenTypeToString(int type)
 {
     switch(type)
     {
@@ -89,14 +89,14 @@ lcddl_TokenTypeToString(int type)
 }
 
 static char
-lcddl_FilePeekChar(FILE *file)
+lcddlFilePeekChar(FILE *file)
 {
     char c = getc(file);
     return c == EOF ? EOF : ungetc(c, file);
 }
 
 static int
-lcddl_ReadIntFromFile(FILE *file,
+lcddlReadIntFromFile(FILE *file,
                       int *lastChar)
 {
     int result = 0;
@@ -115,7 +115,7 @@ lcddl_ReadIntFromFile(FILE *file,
 }
 
 static lcddlToken_t
-lcddl_GetToken(FILE *file)
+lcddlGetToken(FILE *file)
 {
     static char expectingIdentifier = 0;
     static int lineCount = 1;
@@ -161,9 +161,9 @@ lcddl_GetToken(FILE *file)
         identifier[identifierLength - 1] = lastChar;
         ++identifierLength;
 
-        while ((isalnum(lcddl_FilePeekChar(file)) ||
-               lcddl_FilePeekChar(file) == '_'    ||
-               lcddl_FilePeekChar(file) == '-')   &&
+        while ((isalnum(lcddlFilePeekChar(file)) ||
+               lcddlFilePeekChar(file) == '_'    ||
+               lcddlFilePeekChar(file) == '-')   &&
                identifierLength <= 32)
 
         {
@@ -225,7 +225,7 @@ lcddl_GetToken(FILE *file)
                                .Value.Integer = 1
                              };
         lineNumber = lineCount;
-        while(lcddl_FilePeekChar(file) == '*')
+        while(lcddlFilePeekChar(file) == '*')
         {
             lastChar = fgetc(file);
             ++token.Value.Integer;
@@ -234,10 +234,10 @@ lcddl_GetToken(FILE *file)
     }
     else if (lastChar == '[')
     {
-        if (isdigit(lcddl_FilePeekChar(file)))
+        if (isdigit(lcddlFilePeekChar(file)))
         {
             uint32_t arrayCount;
-            arrayCount = lcddl_ReadIntFromFile(file, &lastChar);
+            arrayCount = lcddlReadIntFromFile(file, &lastChar);
 
             if (lastChar != ']')
             {
@@ -262,7 +262,7 @@ lcddl_GetToken(FILE *file)
     {
         for (;(lastChar = fgetc(file)) != '\n';);
         ++lineCount;
-        return lcddl_GetToken(file);
+        return lcddlGetToken(file);
     }
     else
     {
@@ -275,7 +275,7 @@ lcddl_GetToken(FILE *file)
 }
 
 static lcddlNode_t *
-lcddl_Parse(FILE *file)
+lcddlParse(FILE *file)
 {
     lcddlNode_t *topLevelFirst = NULL;
     lcddlNode_t *topLevelLast = NULL;
@@ -284,8 +284,8 @@ lcddl_Parse(FILE *file)
 
     lcddlAnnotation_t *annotations = NULL;
 
-    lcddlToken_t token = lcddl_GetToken(file);
-    for (; token.Type != LCDDL_TOKEN_TYPE_EOF; token = lcddl_GetToken(file))
+    lcddlToken_t token = lcddlGetToken(file);
+    for (; token.Type != LCDDL_TOKEN_TYPE_EOF; token = lcddlGetToken(file))
     {
         if (token.Type == LCDDL_TOKEN_TYPE_ANNOTATION)
         {
@@ -322,19 +322,19 @@ lcddl_Parse(FILE *file)
             memcpy(node->Type,
                    token.Value.String, 32);
 
-            token = lcddl_GetToken(file);
+            token = lcddlGetToken(file);
 
             if (token.Type == LCDDL_TOKEN_TYPE_ASTERIX) 
             {
                 node->IndirectionLevel = token.Value.Integer;
-                token = lcddl_GetToken(file);
+                token = lcddlGetToken(file);
             }
 
             if (token.Type == LCDDL_TOKEN_TYPE_IDENTIFIER)
             {
                 memcpy(node->Name,
                        token.Value.String, 32);
-                token = lcddl_GetToken(file);
+                token = lcddlGetToken(file);
             }
             else
             {
@@ -344,7 +344,7 @@ lcddl_Parse(FILE *file)
             if (token.Type == LCDDL_TOKEN_TYPE_SQUARE_BRACKETS)
             {
                 node->ArrayCount = token.Value.Integer;
-                token = lcddl_GetToken(file);
+                token = lcddlGetToken(file);
             }
 
             if (parent)
@@ -404,7 +404,7 @@ lcddl_Parse(FILE *file)
         {
             LCDDL_ERRORF(token.LineNumber,
                          "Unexpected token %s.",
-                         lcddl_TokenTypeToString(token.Type));
+                         lcddlTokenTypeToString(token.Type));
         }
 
         
@@ -419,14 +419,14 @@ lcddl_Parse(FILE *file)
 }
 
 static void
-lcddl_FreeNode(lcddlNode_t *node)
+lcddlFreeNode(lcddlNode_t *node)
 {
     lcddlNode_t *child = node->Children;
     while (child)
     {
         lcddlNode_t *prev = child;
         child = child->Next;
-        lcddl_FreeNode(prev);
+        lcddlFreeNode(prev);
     }
 
     lcddlAnnotation_t *tag = node->Tags;
@@ -453,7 +453,7 @@ int main(int argc, char **argv)
             LCDDL_ERRORF(0, "Could not open input file: %s", argv[i]);
         }
 
-        lcddlNode_t *ast = lcddl_Parse(file);
+        lcddlNode_t *ast = lcddlParse(file);
 
         lcddlNode_t *node = ast;
         lcddlUserTopLevelCallback(node);
@@ -469,7 +469,7 @@ int main(int argc, char **argv)
             lcddlNode_t *prev = node;
             node = node->Next;
 
-            lcddl_FreeNode(prev);
+            lcddlFreeNode(prev);
         }
 
         fclose(file);
@@ -483,7 +483,7 @@ int main(int argc, char **argv)
 /*****************************************************************************/
 
 static void
-lcddl_WriteFieldToFileAsC(FILE *file,
+lcddlWriteFieldToFileAsC(FILE *file,
                           lcddlNode_t *node,
                           int indentation)
 {
@@ -514,7 +514,7 @@ lcddl_WriteFieldToFileAsC(FILE *file,
 }
 
 static void
-lcddl_WriteStructToFileAsC(FILE *file,
+lcddlWriteStructToFileAsC(FILE *file,
                            lcddlNode_t *node)
 {
     fprintf(file, "typedef struct %s %s;\n", node->Name, node->Name);
@@ -525,28 +525,28 @@ lcddl_WriteStructToFileAsC(FILE *file,
          member;
          member = member->Next)
     {
-        lcddl_WriteFieldToFileAsC(file, member, 4);
+        lcddlWriteFieldToFileAsC(file, member, 4);
     }
 
     fprintf(file, "};\n");
 }
 
 void
-lcddl_WriteNodeToFileAsC(FILE *file,
+lcddlWriteNodeToFileAsC(FILE *file,
                          lcddlNode_t *node)
 {
     if (node->Children)
     {
-        lcddl_WriteStructToFileAsC(file, node);
+        lcddlWriteStructToFileAsC(file, node);
     }
     else
     {
-        lcddl_WriteFieldToFileAsC(file, node, 0);
+        lcddlWriteFieldToFileAsC(file, node, 0);
     }
     fprintf(file, "\n");
 }
 
-uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag)
+uint8_t lcddlNodeHasTag(lcddlNode_t *node, char *tag)
 {
     lcddlAnnotation_t *annotation;
     for (annotation = node->Tags;

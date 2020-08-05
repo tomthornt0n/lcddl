@@ -28,7 +28,7 @@ void lcddlUserInitCallback(void);
 void lcddlUserTopLevelCallback(lcddlNode_t *node);
 void lcddlUserCleanupCallback(void);
 
-void lcddl_WriteNodeToFileAsC(FILE *file, lcddlNode_t *node);
-uint8_t lcddl_NodeHasTag(lcddlNode_t *node, char *tag);
+void lcddlWriteNodeToFileAsC(FILE *file, lcddlNode_t *node);
+uint8_t lcddlNodeHasTag(lcddlNode_t *node, char *tag);
 
 #endif
