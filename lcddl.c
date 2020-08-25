@@ -442,6 +442,9 @@ lcddlFreeNode(lcddlNode_t *node)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+#include "windowsLogInit.c"
+#endif
     lcddlUserInitCallback();
 
     int i;
@@ -476,6 +479,9 @@ int main(int argc, char **argv)
     }
 
     lcddlUserCleanupCallback();
+#ifdef _WIN32
+#include "windowsLogDeinit.c"
+#endif
 }
 
 /*****************************************************************************/
