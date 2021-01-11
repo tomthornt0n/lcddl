@@ -1,24 +1,31 @@
-# this is a comment
+// this is a comment
+// characters between '#' and '\n' are skipped by the tokeniser
 
-foo : i32 = 8; # declarations are in the form `name : type = value;`
-_bar2 : f64 = 912.872; # identifiers must begin with an '_' or a letter and can contain only alphanumeric characters and underscores
 
-# the type or the value can be ommited
+
+// whitespace is ignored
+
+
+
+foo : i32 = 8; // declarations are in the form `name : type = value;`
+_bar2 : f64 = 912.872; // identifiers must begin with an '_' or a letter and can contain only alphanumeric characters and underscores
+
+// the type or the value can be ommited
 my_float := 19.8;
 my_unsigned_int : u64;
 
-# compound declarations are in the form `name :: type {(declarations)};`
+// compound declarations are in the form `name :: type {(declarations)};`
 example_1 :: struct
 {
-    # any character between an '=' and a ';' is treated as part of the declarations 'value'
-    # whitespace between the '=' and the first non-whitespace character is truncated
-    # LCDDL does not parse values in any way - they are simply sent to the custom layer as a string
+    // any character between an '=' and a ';' is treated as part of the declarations 'value'
+    // whitespace between the '=' and the first non-whitespace character is truncated
+    // LCDDL does not parse values in any way - they are simply sent to the custom layer as a string
     example_2 : string = "hello, world!";
 
-    # compound declarations can be nested
+    // compound declarations can be nested
     example_3 :: union
     {
-        example_4 : i32;
+        example_4 : [4]i32; // arrays can be declared by prefixing the type with [n] where n is an integral literal corresponding to the number of elements in the array
         example_5 : u32;
     };
 };

@@ -6,6 +6,7 @@ struct LcddlNode
 {
     LcddlNode *first_child, *next_sibling;
     char *identifier, *type, *value;
+    unsigned int array_count; // NOTE(tbt): the number of elements in the array. normal declarations have an `array_count` of 0
 };
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)

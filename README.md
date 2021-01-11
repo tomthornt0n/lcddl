@@ -5,7 +5,7 @@ LCDDL is a small utitility to allow for compile time type introspection in langu
 It parses a simple format which describes a series of declarations into a 'list of lists' style tree, which is then passes to a custom user layer, which can then use this data for whatever your project requires.  
 
 LCDDL was recently rewritten and some features that were previously avaible are currently missing:
-* arrays
+* ~~arrays~~
 * pointers
 * annotations
 

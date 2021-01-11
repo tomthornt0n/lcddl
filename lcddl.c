@@ -57,21 +57,27 @@ enum
     TOKEN_TYPE_value,
     TOKEN_TYPE_open_curly_bracket,
     TOKEN_TYPE_close_curly_bracket,
+    TOKEN_TYPE_open_square_bracket,
+    TOKEN_TYPE_close_square_bracket,
+    TOKEN_TYPE_integral_literal,
     TOKEN_TYPE_semicolon,
     TOKEN_TYPE_eof,
 };
 
-#define TOKEN_TYPE_TO_STRING(_token_type)                                      \
-    ((_token_type) == TOKEN_TYPE_none                ? "none" :                \
-     (_token_type) == TOKEN_TYPE_identifier          ? "identifier" :          \
-     (_token_type) == TOKEN_TYPE_colon               ? "colon" :               \
-     (_token_type) == TOKEN_TYPE_type                ? "type" :                \
-     (_token_type) == TOKEN_TYPE_equals              ? "equals" :              \
-     (_token_type) == TOKEN_TYPE_value               ? "value" :               \
-     (_token_type) == TOKEN_TYPE_open_curly_bracket  ? "open_curly_bracket" :  \
-     (_token_type) == TOKEN_TYPE_close_curly_bracket ? "close_curly_bracket" : \
-     (_token_type) == TOKEN_TYPE_semicolon           ? "semicolon" :           \
-     (_token_type) == TOKEN_TYPE_eof                 ? "eof" : NULL)           \
+#define TOKEN_TYPE_TO_STRING(_token_type)                                        \
+    ((_token_type) == TOKEN_TYPE_none                 ? "none" :                 \
+     (_token_type) == TOKEN_TYPE_identifier           ? "identifier" :           \
+     (_token_type) == TOKEN_TYPE_colon                ? "colon" :                \
+     (_token_type) == TOKEN_TYPE_type                 ? "type" :                 \
+     (_token_type) == TOKEN_TYPE_equals               ? "equals" :               \
+     (_token_type) == TOKEN_TYPE_value                ? "value" :                \
+     (_token_type) == TOKEN_TYPE_open_curly_bracket   ? "open_curly_bracket" :   \
+     (_token_type) == TOKEN_TYPE_close_curly_bracket  ? "close_curly_bracket" :  \
+     (_token_type) == TOKEN_TYPE_open_square_bracket  ? "open_square_bracket" :  \
+     (_token_type) == TOKEN_TYPE_close_square_bracket ? "close_square_bracket" : \
+     (_token_type) == TOKEN_TYPE_integral_literal     ? "integral literal" :     \
+     (_token_type) == TOKEN_TYPE_semicolon            ? "semicolon" :            \
+     (_token_type) == TOKEN_TYPE_eof                  ? "eof" : NULL)
 
 typedef struct
 {
@@ -98,8 +104,9 @@ get_next_token(FILE *f)
 {
     Token result = {0};
     int c = fgetc(f);
-    static bool expecting_type  = false;
-    static bool expecting_value = false;
+    static bool expecting_type    = false;
+    static bool expecting_value   = false;
+    static bool expecting_integer = false;
 
     // NOTE(tbt): ignore white space
     while (isspace((unsigned char)c))
@@ -112,7 +119,8 @@ get_next_token(FILE *f)
     }
 
     // NOTE(tbt): skip comments
-    if (c == '#')
+    if (c == '/' &&
+        fpeekc(f) == '/')
     {
         while (c != '\n') { c = fgetc(f); };
         ++global_current_line;
@@ -142,6 +150,36 @@ get_next_token(FILE *f)
 
         result.type  = TOKEN_TYPE_value;
         result.value = value;
+    }
+    else if (expecting_integer)
+    {
+        if (isdigit(c))
+        {
+            expecting_integer = false;
+
+            int literal_len = 0, literal_capacity = STRING_CHUNK_SIZE;
+            char *literal = calloc(literal_capacity, 1);
+
+            literal[literal_len++] = c;
+            while (isdigit(fpeekc(f)))
+            {
+                c = fgetc(f);
+                literal[literal_len++] = c;
+
+                if (literal_len > literal_capacity)
+                {
+                    literal_capacity += STRING_CHUNK_SIZE;
+                    literal = realloc(literal, literal_capacity);
+                }
+            }
+
+            result.type  = TOKEN_TYPE_integral_literal;
+            result.value = literal;
+        }
+        else
+        {
+            LCDDL_ERROR("Array size must be an integral literal");
+        }
     }
     else if (isalpha(c) ||
              c == '_')
@@ -181,13 +219,13 @@ get_next_token(FILE *f)
     else if (c == ':')
     {
         expecting_type = true;
-        result.type = TOKEN_TYPE_colon;
+        result.type    = TOKEN_TYPE_colon;
     }
     else if (c == '=')
     {
         expecting_type  = false;
         expecting_value = true;
-        result.type = TOKEN_TYPE_equals;
+        result.type     = TOKEN_TYPE_equals;
     }
     else if (c == '{')
     {
@@ -196,6 +234,16 @@ get_next_token(FILE *f)
     else if (c == '}')
     {
         result.type = TOKEN_TYPE_close_curly_bracket;
+    }
+    else if (c == '[')
+    {
+        expecting_integer = true;
+        result.type       = TOKEN_TYPE_open_square_bracket;
+    }
+    else if (c == ']')
+    {
+        expecting_integer = false;
+        result.type       = TOKEN_TYPE_close_square_bracket;
     }
     else if (c == ';')
     {
@@ -328,12 +376,21 @@ declaration(FILE *f)
         {
             LcddlNode *result  = calloc(sizeof(*result), 1);
 
+            if (global_current_token.type == TOKEN_TYPE_open_square_bracket)
+            {
+                eat(f, TOKEN_TYPE_open_square_bracket);
+                result->array_count = atoi(global_current_token.value);
+                eat(f, TOKEN_TYPE_integral_literal);
+                eat(f, TOKEN_TYPE_close_square_bracket);
+            }
+
             type = global_current_token.value;
             eat(f, TOKEN_TYPE_type);
 
             if (global_current_token.type == TOKEN_TYPE_equals)
             {
                 eat(f, TOKEN_TYPE_equals);
+
                 value = global_current_token.value;
                 eat(f, TOKEN_TYPE_value);
             }
