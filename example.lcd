@@ -25,8 +25,8 @@ example_1 :: struct
     // compound declarations can be nested
     example_3 :: union
     {
-        example_4 : [4]i32; // arrays can be declared by prefixing the type with [n] where n is an integral literal corresponding to the number of elements in the array
-        example_5 : u32;
+        example_4 : [8]i8; // arrays can be declared by prefixing the type with `[n]` where n is an integral literal corresponding to the number of elements in the array
+        example_5 : u32*;  // a variable can be declared as a pointer to a type by suffixing the type with '*'. The number of '*' corresponds to the level of indirection ('*' is a single pointer, '**' is a double pointer, etc.)
     };
 };
 

@@ -44,13 +44,11 @@
                                             __VA_ARGS__);               \
                                     exit(EXIT_FAILURE)
 
-#define internal static
-
 enum
 {
     TOKEN_TYPE_none,
 
-    TOKEN_TYPE_identifier,
+    TOKEN_TYPE_name,
     TOKEN_TYPE_colon,
     TOKEN_TYPE_type,
     TOKEN_TYPE_equals,
@@ -60,13 +58,14 @@ enum
     TOKEN_TYPE_open_square_bracket,
     TOKEN_TYPE_close_square_bracket,
     TOKEN_TYPE_integral_literal,
+    TOKEN_TYPE_asterix,
     TOKEN_TYPE_semicolon,
     TOKEN_TYPE_eof,
 };
 
 #define TOKEN_TYPE_TO_STRING(_token_type)                                        \
     ((_token_type) == TOKEN_TYPE_none                 ? "none" :                 \
-     (_token_type) == TOKEN_TYPE_identifier           ? "identifier" :           \
+     (_token_type) == TOKEN_TYPE_name                 ? "name" :                 \
      (_token_type) == TOKEN_TYPE_colon                ? "colon" :                \
      (_token_type) == TOKEN_TYPE_type                 ? "type" :                 \
      (_token_type) == TOKEN_TYPE_equals               ? "equals" :               \
@@ -76,6 +75,7 @@ enum
      (_token_type) == TOKEN_TYPE_open_square_bracket  ? "open_square_bracket" :  \
      (_token_type) == TOKEN_TYPE_close_square_bracket ? "close_square_bracket" : \
      (_token_type) == TOKEN_TYPE_integral_literal     ? "integral literal" :     \
+     (_token_type) == TOKEN_TYPE_asterix              ? "asterix" :              \
      (_token_type) == TOKEN_TYPE_semicolon            ? "semicolon" :            \
      (_token_type) == TOKEN_TYPE_eof                  ? "eof" : NULL)
 
@@ -212,7 +212,7 @@ get_next_token(FILE *f)
         }
         else
         {
-            result.type = TOKEN_TYPE_identifier;
+            result.type = TOKEN_TYPE_name;
         }
         result.value = identifier;
     }
@@ -245,6 +245,22 @@ get_next_token(FILE *f)
         expecting_integer = false;
         result.type       = TOKEN_TYPE_close_square_bracket;
     }
+    else if (c == '*')
+    {
+        int size      = 2;
+        result.type   = TOKEN_TYPE_asterix;
+        result.value  = malloc(size);
+        *result.value = c;
+
+        while (fpeekc(f) == '*')
+        {
+            c = fgetc(f);
+            ++size;
+            result.value = realloc(result.value, size);
+            result.value[size - 2] = c;
+        }
+        result.value[size - 1] = 0;
+    }
     else if (c == ';')
     {
         result.type = TOKEN_TYPE_semicolon;
@@ -258,6 +274,9 @@ get_next_token(FILE *f)
         LCDDL_ERRORF("Unexpected character '%c'", c);
     }
 
+#ifdef LCDDL_PRINT_TOKENS
+    fprintf(stderr, "%-32s -> %s\n", TOKEN_TYPE_TO_STRING(result.type), result.value);
+#endif
     return result;
 } 
 
@@ -292,9 +311,8 @@ statement(FILE *f)
         eat(f, TOKEN_TYPE_open_curly_bracket);
         result = statement_list(f);
         eat(f, TOKEN_TYPE_close_curly_bracket);
-
     }
-    else if (global_current_token.type == TOKEN_TYPE_identifier)
+    else if (global_current_token.type == TOKEN_TYPE_name)
     {
         result = declaration(f);
         eat(f, TOKEN_TYPE_semicolon);
@@ -313,18 +331,16 @@ statement_list(FILE *f)
 {
     LcddlNode *result = calloc(1, sizeof(*result));
 
-    // NOTE(tbt): statements can begin with an identifier or a curly bracket.
-    //            there is probably a better way of dealing with this but i'm
-    //            not clever enought to think of it
-    while (global_current_token.type == TOKEN_TYPE_identifier ||
+    while (global_current_token.type == TOKEN_TYPE_name ||
            global_current_token.type == TOKEN_TYPE_open_curly_bracket)
+    // NOTE(tbt): statements can begin with an identifier or a curly bracket.
     {
-        LcddlNode *child = statement(f);
+        LcddlNode *child    = statement(f);
         child->next_sibling = result->first_child;
         result->first_child = child;
     }
 
-    if (global_current_token.type == TOKEN_TYPE_identifier)
+    if (global_current_token.type == TOKEN_TYPE_name)
     {
         LCDDL_ERRORF("Unexpected identifier '%s'",
                      global_current_token.value);
@@ -336,47 +352,41 @@ statement_list(FILE *f)
 internal LcddlNode *
 declaration(FILE *f)
 {
-    char *identifier = global_current_token.value, *type = NULL, *value = NULL;
+    LcddlNode *result;
 
-    eat(f, TOKEN_TYPE_identifier);
+    char *name = global_current_token.value;
+    eat(f, TOKEN_TYPE_name);
     eat(f, TOKEN_TYPE_colon);
 
     if (global_current_token.type == TOKEN_TYPE_colon)
-    // NOTE(tbt): double colon means compound definition
+    // NOTE(tbt): double colon means compound declaration
     {
         eat(f, TOKEN_TYPE_colon);
-        type = global_current_token.value;
+        char *type   = global_current_token.value;
         eat(f, TOKEN_TYPE_type);
         eat(f, TOKEN_TYPE_open_curly_bracket);
 
-        LcddlNode *result  = statement_list(f);
-        result->identifier = identifier;
-        result->type       = type;
-
+        result       = statement_list(f);
+        result->type = type;
+        result->name = name;
         eat(f, TOKEN_TYPE_close_curly_bracket);
-
-        return result;
     }
     else
     {
+        result       = calloc(sizeof(*result), 1);
+        result->name = name;
+
         if (global_current_token.type == TOKEN_TYPE_equals)
         // NOTE(tbt): type has been ommited - go straight to value;
         {
             eat(f, TOKEN_TYPE_equals);
-            value = global_current_token.value;
+            result->value = global_current_token.value;
             eat(f, TOKEN_TYPE_value);
-
-            LcddlNode *result  = calloc(sizeof(*result), 1);
-            result->identifier = identifier;
-            result->value      = value;
-
-            return result;
         }
         else
         {
-            LcddlNode *result  = calloc(sizeof(*result), 1);
-
             if (global_current_token.type == TOKEN_TYPE_open_square_bracket)
+            // NOTE(tbt): declaration is an array
             {
                 eat(f, TOKEN_TYPE_open_square_bracket);
                 result->array_count = atoi(global_current_token.value);
@@ -384,24 +394,28 @@ declaration(FILE *f)
                 eat(f, TOKEN_TYPE_close_square_bracket);
             }
 
-            type = global_current_token.value;
+            result->type = global_current_token.value;
             eat(f, TOKEN_TYPE_type);
 
+            if (global_current_token.type == TOKEN_TYPE_asterix)
+            // NOTE(tbt): declaration is a pointer
+            {
+                result->indirection_level = strlen(global_current_token.value);
+                eat(f, TOKEN_TYPE_asterix);
+            }
+
             if (global_current_token.type == TOKEN_TYPE_equals)
+            // NOTE(tbt): specifying a value is optional
             {
                 eat(f, TOKEN_TYPE_equals);
 
-                value = global_current_token.value;
+                result->value = global_current_token.value;
                 eat(f, TOKEN_TYPE_value);
             }
-
-            result->identifier = identifier;
-            result->type       = type;
-            result->value      = value;
-
-            return result;
         }
     }
+
+    return result;
 }
 
 typedef void (*UserInitCallback)(void);
@@ -474,10 +488,10 @@ parse_file(char *path)
 {
     FILE *f = fopen(path, "r");
 
-    global_current_line = 1;
+    global_current_line  = 1;
     global_current_token = get_next_token(f);
     strncpy(global_current_file, path, PATH_MAX_LEN);
-    LcddlNode *result = statement_list(f);
+    LcddlNode *result    = statement_list(f);
 
     fclose(f);
     return result;

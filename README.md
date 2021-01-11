@@ -8,7 +8,7 @@ It has been tested on Arch Linux and Windows 10, but should theoretically work o
 
 LCDDL was recently rewritten and some features that were previously avaible are currently missing (see issues):
 * ~~arrays~~
-* pointers
+* ~~pointers~~
 * annotations
 
 The old version is available on the `legacy` branch.
