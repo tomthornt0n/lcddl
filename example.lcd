@@ -1,96 +1,25 @@
-# This is a comment - any characters between a '#' and the end of the line
-# are ignored.
+# this is a comment
 
+foo : i32 = 8; # declarations are in the form `name : type = value;`
+_bar2 : f64 = 912.872; # identifiers must begin with an '_' or a letter and can contain only alphanumeric characters and underscores
 
+# the type or the value can be ommited
+my_float := 19.8;
+my_unsigned_int : u64;
 
+# compound declarations are in the form `name :: type {(declarations)};`
+example_1 :: struct
+{
+    # any character between an '=' and a ';' is treated as part of the declarations 'value'
+    # whitespace between the '=' and the first non-whitespace character is truncated
+    # LCDDL does not parse values in any way - they are simply sent to the custom layer as a string
+    example_2 : string = "hello, world!";
 
-
-# ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑ ↑
-# Whitespace is ignored.
-# ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
-
-
-
-
-# This is a declaration.
-#     ↓
-float foo; # ← Declarations are in the format type name;
-#       ↑
-#  Types and names
-#  must start with
-#  an alphabetic
-#  character or an
-#  underscore and
-#  must contain
-#  only alphabetic
-#  characters,
-#  numeric
-#  characters,
-#  underscores
-#  or dashes.
-
-#       Arrays can be
-#       declared by
-#       by specifying
-#       the number of
-#       elements in the
-#       array, surrounded
-#       by square brackets,
-#       after an identifier.
-#       All declarations
-#       are treated as
-#       arrays, with
-#       an array size
-#       of 1 by default.
-#            ↓
-double array[32];
-
-# This is an
-# annotation.
-# They can
-# be used to
-# provide
-# extra
-# information
-# to the
-# user layer.
-#    ↓
-@annotation1
-struct bar #   Declarations with the type 'struct' must be followed by a
-{          # ← curly bracket block containing member fields.
-    float member1;
-#           ↑
-#     Types and names
-#     should not exceed
-#     31 characters in
-#     length.
-#     Any additional
-#     characters will
-#     be ignored.
-
-#                             The number
-#                             of '*'
-#                             present
-#                             after a type
-#                             represents
-#                             the level of
-#                             indirection.
-#                                  ↓
-    @annotation2 @annotation3 char *member2;
-#         ↑
-#   You can add
-#   as many
-#   annotations
-#   as you like
-#   to a
-#   declaration.
-#   Annotations
-#   also should
-#   not exceed
-#   31
-#   characters
-#   in length
-#   ( including
-#   the '@' ).
-}
+    # compound declarations can be nested
+    example_3 :: union
+    {
+        example_4 : i32;
+        example_5 : u32;
+    };
+};
 

@@ -1,568 +1,460 @@
 #include <ctype.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lcddl.h"
 
-#define LCDDL_WARN(message) fprintf(stderr,                                    \
-                                    "\x1b[33mWARNING: "                        \
-                                    message                                    \
-                                    "\x1b[0m\n")
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+    #include <windows.h>
 
-#define LCDDL_ERROR(line, message) fprintf(stderr,                             \
-                                           "\x1b[31mERROR at line %d: "        \
-                                           message                             \
-                                           "\x1b[0m\n",                        \
-                                           line);                              \
-                             lcddlUserCleanupCallback();                       \
-                             exit(-1)
+    // HACK(tbt): disable ANSI escape codes for colours on windows
+    // TODO(tbt): setup the virtual terminal on windows to use ANSI escape codes
+    #define LOG_WARN_BEGIN  "%s:%d WARNING : "
+    #define LOG_ERROR_BEGIN "%s:%d ERROR : "
+#else
+    #include <dlfcn.h>
 
-#define LCDDL_ERRORF(line, message, ...) fprintf(stderr,                       \
-                                                 "\x1b[31mERROR at line %d: "  \
-                                                 message                       \
-                                                 "\x1b[0m\n",                  \
-                                                 line,                         \
-                                                 __VA_ARGS__);                 \
-                             lcddlUserCleanupCallback();                       \
-                             exit(-1)
+    #define LOG_WARN_BEGIN   "\x1b[33m%s : line %d : WARNING : \x1b[0m"
+    #define LOG_ERROR_BEGIN  "\x1b[31m%s : line %d : ERROR : \x1b[0m"
+#endif
+
+#define LCDDL_WARN(_message) fprintf(stderr,                            \
+                                     LOG_WARN_BEGIN                     \
+                                     _message                           \
+                                     "\n",                              \
+                                     global_current_file,               \
+                                     global_current_line)
+
+#define LCDDL_ERROR(_message) fprintf(stderr,                           \
+                                      LOG_ERROR_BEGIN                   \
+                                      _message                          \
+                                      "\n",                             \
+                                      global_current_file,              \
+                                      global_current_line);             \
+                              exit(EXIT_FAILURE)
+
+#define LCDDL_ERRORF(_message, ...) fprintf(stderr,                     \
+                                            LOG_ERROR_BEGIN             \
+                                            _message                    \
+                                            "\n",                       \
+                                            global_current_file,        \
+                                            global_current_line,        \
+                                            __VA_ARGS__);               \
+                                    exit(EXIT_FAILURE)
+
+#define internal static
 
 enum
 {
-    LCDDL_TOKEN_TYPE_NONE,
-    LCDDL_TOKEN_TYPE_UNKNOWN,
-    LCDDL_TOKEN_TYPE_EOF,
-    LCDDL_TOKEN_TYPE_TYPENAME,
-    LCDDL_TOKEN_TYPE_IDENTIFIER,
-    LCDDL_TOKEN_TYPE_SEMICOLON,
-    LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET,
-    LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET,
-    LCDDL_TOKEN_TYPE_ASTERIX,
-    LCDDL_TOKEN_TYPE_ANNOTATION,
-    LCDDL_TOKEN_TYPE_SQUARE_BRACKETS
+    TOKEN_TYPE_none,
+
+    TOKEN_TYPE_identifier,
+    TOKEN_TYPE_colon,
+    TOKEN_TYPE_type,
+    TOKEN_TYPE_equals,
+    TOKEN_TYPE_value,
+    TOKEN_TYPE_open_curly_bracket,
+    TOKEN_TYPE_close_curly_bracket,
+    TOKEN_TYPE_semicolon,
+    TOKEN_TYPE_eof,
 };
 
-typedef struct 
-{
-    union
-    {
-        char String[32];
-        uint32_t Integer;
-    } Value;
-    int Type;
-    int LineNumber;
-} lcddlToken_t;
+#define TOKEN_TYPE_TO_STRING(_token_type)                                      \
+    ((_token_type) == TOKEN_TYPE_none                ? "none" :                \
+     (_token_type) == TOKEN_TYPE_identifier          ? "identifier" :          \
+     (_token_type) == TOKEN_TYPE_colon               ? "colon" :               \
+     (_token_type) == TOKEN_TYPE_type                ? "type" :                \
+     (_token_type) == TOKEN_TYPE_equals              ? "equals" :              \
+     (_token_type) == TOKEN_TYPE_value               ? "value" :               \
+     (_token_type) == TOKEN_TYPE_open_curly_bracket  ? "open_curly_bracket" :  \
+     (_token_type) == TOKEN_TYPE_close_curly_bracket ? "close_curly_bracket" : \
+     (_token_type) == TOKEN_TYPE_semicolon           ? "semicolon" :           \
+     (_token_type) == TOKEN_TYPE_eof                 ? "eof" : NULL)           \
 
-static char *
-lcddlTokenTypeToString(int type)
+typedef struct
 {
-    switch(type)
-    {
-        case LCDDL_TOKEN_TYPE_NONE:
-            return "TOKEN_TYPE_NONE";
-        case LCDDL_TOKEN_TYPE_UNKNOWN:
-            return "TOKEN_TYPE_UNKNOWN";
-        case LCDDL_TOKEN_TYPE_EOF:
-            return "TOKEN_TYPE_EOF";
-        case LCDDL_TOKEN_TYPE_TYPENAME:
-            return "TOKEN_TYPE_TYPENAME";
-        case LCDDL_TOKEN_TYPE_IDENTIFIER:
-            return "TOKEN_TYPE_IDENTIFIER";
-        case LCDDL_TOKEN_TYPE_SEMICOLON:
-            return "TOKEN_TYPE_SEMICOLON";
-        case LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET:
-            return "TOKEN_TYPE_OPEN_CURLY_BRACKET";
-        case LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET:
-            return "TOKEN_TYPE_CLOSE_CURLY_BRACKET";
-        case LCDDL_TOKEN_TYPE_ASTERIX:
-            return "TOKEN_TYPE_ASTERIX";
-        case LCDDL_TOKEN_TYPE_ANNOTATION:
-            return "TOKEN_TYPE_ANNOTATION";
-        case LCDDL_TOKEN_TYPE_SQUARE_BRACKETS:
-            return "TOKEN_TYPE_SQUARE_BRACKETS";
-        default:
-            return "\x1b[31mERROR converting to string: "
-                   "Unknown token type\x1b[0m";
-    }
-}
+    int type;
+    char *value;
+} Token;
 
-static char
-lcddlFilePeekChar(FILE *file)
+#define STRING_CHUNK_SIZE 32
+#define PATH_MAX_LEN      96
+
+internal int   global_current_line  = 1;
+internal Token global_current_token = {0};
+internal char  global_current_file[PATH_MAX_LEN] = {0};
+
+int
+fpeekc(FILE *file)
 {
-    char c = getc(file);
+    int c = fgetc(file);
     return c == EOF ? EOF : ungetc(c, file);
 }
 
-static int
-lcddlReadIntFromFile(FILE *file,
-                      int *lastChar)
+internal Token
+get_next_token(FILE *f)
 {
-    int result = 0;
+    Token result = {0};
+    int c = fgetc(f);
+    static bool expecting_type  = false;
+    static bool expecting_value = false;
 
-    char c = fgetc(file);
-    while (c >= 48 &&
-           c <= 57)
+    // NOTE(tbt): ignore white space
+    while (isspace((unsigned char)c))
     {
-        result *= 10;
-        result += c - 48;
-        c = fgetc(file);
+        if (c == '\n')
+        {
+            ++global_current_line;
+        }
+        c = fgetc(f);
     }
 
-    *lastChar = c;
+    // NOTE(tbt): skip comments
+    if (c == '#')
+    {
+        while (c != '\n') { c = fgetc(f); };
+        ++global_current_line;
+        return get_next_token(f);
+    }
+
+
+    if (expecting_value)
+    {
+        expecting_value = false;
+
+        int value_len = 0, value_capacity = STRING_CHUNK_SIZE;
+        char *value = calloc(value_capacity, 1);
+
+        value[value_len++] = c;
+        while (fpeekc(f) != ';')
+        {
+            c = fgetc(f);
+            value[value_len++] = c;
+
+            if (value_len > value_capacity)
+            {
+                value_capacity += STRING_CHUNK_SIZE;
+                value = realloc(value, value_capacity);
+            }
+        }
+
+        result.type  = TOKEN_TYPE_value;
+        result.value = value;
+    }
+    else if (isalpha(c) ||
+             c == '_')
+    // NOTE(tbt): identifier can contain alphanumeric character and underscores
+    //            and must begin with a letter or an underscore, like C.
+    {
+        int identifier_len = 0, identifier_capacity = STRING_CHUNK_SIZE;
+        char *identifier = calloc(identifier_capacity, 1);
+
+        identifier[identifier_len++] = c;
+        while (isalnum(fpeekc(f)) ||
+               fpeekc(f) == '_')
+        {
+            c = fgetc(f);
+            identifier[identifier_len++] = c;
+
+            if (identifier_len > identifier_capacity)
+            {
+                identifier_capacity += STRING_CHUNK_SIZE;
+                identifier = realloc(identifier, identifier_capacity);
+            }
+        }
+
+        // NOTE(tbt): determine whether it is a type or an identifier depending
+        //            on the previous token
+        if (expecting_type)
+        {
+            result.type    = TOKEN_TYPE_type;
+            expecting_type = false;
+        }
+        else
+        {
+            result.type = TOKEN_TYPE_identifier;
+        }
+        result.value = identifier;
+    }
+    else if (c == ':')
+    {
+        expecting_type = true;
+        result.type = TOKEN_TYPE_colon;
+    }
+    else if (c == '=')
+    {
+        expecting_type  = false;
+        expecting_value = true;
+        result.type = TOKEN_TYPE_equals;
+    }
+    else if (c == '{')
+    {
+        result.type = TOKEN_TYPE_open_curly_bracket;
+    }
+    else if (c == '}')
+    {
+        result.type = TOKEN_TYPE_close_curly_bracket;
+    }
+    else if (c == ';')
+    {
+        result.type = TOKEN_TYPE_semicolon;
+    }
+    else if (c == EOF)
+    {
+        result.type = TOKEN_TYPE_eof;
+    }
+    else
+    {
+        LCDDL_ERRORF("Unexpected character '%c'", c);
+    }
+
+    return result;
+} 
+
+internal void
+eat(FILE *f,
+    int token_type)
+{
+    if (global_current_token.type == token_type)
+    {
+        global_current_token = get_next_token(f);
+    }
+    else
+    {
+        LCDDL_ERRORF("Expected %s, got %s",
+                     TOKEN_TYPE_TO_STRING(token_type),
+                     TOKEN_TYPE_TO_STRING(global_current_token.type));
+    }
+}
+
+internal LcddlNode *statement(FILE *f);
+internal LcddlNode *statement_list(FILE *f);
+internal LcddlNode *declaration(FILE *f);
+
+internal LcddlNode *
+statement(FILE *f)
+{
+    LcddlNode *result;
+
+    if (global_current_token.type == TOKEN_TYPE_open_curly_bracket)
+    {
+        LCDDL_WARN("Usage of anonymous compound statements is discouraged");
+        eat(f, TOKEN_TYPE_open_curly_bracket);
+        result = statement_list(f);
+        eat(f, TOKEN_TYPE_close_curly_bracket);
+
+    }
+    else if (global_current_token.type == TOKEN_TYPE_identifier)
+    {
+        result = declaration(f);
+        eat(f, TOKEN_TYPE_semicolon);
+    }
+    else
+    {
+        LCDDL_ERRORF("Unexpected token '%s'",
+                     TOKEN_TYPE_TO_STRING(global_current_token.type));
+    }
+
     return result;
 }
 
-static lcddlToken_t
-lcddlGetToken(FILE *file)
+internal LcddlNode *
+statement_list(FILE *f)
 {
-    static char expectingIdentifier = 0;
-    static int lineCount = 1;
-    static int lineNumber = 1;
+    LcddlNode *result = calloc(1, sizeof(*result));
 
-    int lastChar = fgetc(file);
-
-    if (lastChar == EOF)
+    // NOTE(tbt): statements can begin with an identifier or a curly bracket.
+    //            there is probably a better way of dealing with this but i'm
+    //            not clever enought to think of it
+    while (global_current_token.type == TOKEN_TYPE_identifier ||
+           global_current_token.type == TOKEN_TYPE_open_curly_bracket)
     {
-        LCDDL_ERROR(0, "Unexpected EOF");
-    }
-    else if (lastChar == '\n')
-    {
-        ++lineCount;
+        LcddlNode *child = statement(f);
+        child->next_sibling = result->first_child;
+        result->first_child = child;
     }
 
-    /* NOTE(tbt): skip over white space */
-    while (isspace((unsigned char)lastChar))
+    if (global_current_token.type == TOKEN_TYPE_identifier)
     {
-        lastChar = fgetc(file);
-        if (lastChar == EOF)
-        {
-            lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_EOF };
-            return token;
-        }
-        else if (lastChar == '\n')
-        {
-            ++lineCount;
-        }
+        LCDDL_ERRORF("Unexpected identifier '%s'",
+                     global_current_token.value);
     }
-    
-    if (isalpha(lastChar) ||
-        lastChar == '_'   ||
-        lastChar == '@')
+
+    return result;
+}
+
+internal LcddlNode *
+declaration(FILE *f)
+{
+    char *identifier = global_current_token.value, *type = NULL, *value = NULL;
+
+    eat(f, TOKEN_TYPE_identifier);
+    eat(f, TOKEN_TYPE_colon);
+
+    if (global_current_token.type == TOKEN_TYPE_colon)
+    // NOTE(tbt): double colon means compound definition
     {
-        lcddlToken_t token;
+        eat(f, TOKEN_TYPE_colon);
+        type = global_current_token.value;
+        eat(f, TOKEN_TYPE_type);
+        eat(f, TOKEN_TYPE_open_curly_bracket);
 
-        uint8_t isAnnotation = (lastChar == '@');
+        LcddlNode *result  = statement_list(f);
+        result->identifier = identifier;
+        result->type       = type;
 
-        int identifierLength = 1;
-        char identifier[32];
+        eat(f, TOKEN_TYPE_close_curly_bracket);
 
-        identifier[identifierLength - 1] = lastChar;
-        ++identifierLength;
-
-        while ((isalnum(lcddlFilePeekChar(file)) ||
-               lcddlFilePeekChar(file) == '_'    ||
-               lcddlFilePeekChar(file) == '-')   &&
-               identifierLength <= 32)
-
-        {
-            lastChar = fgetc(file);
-            identifier[identifierLength - 1] = lastChar;
-            ++identifierLength;
-        }
-
-        identifier[identifierLength - 1] = 0;
-        memcpy(token.Value.String,
-               identifier, 32);
-
-        token.LineNumber = lineNumber;
-        lineNumber = lineCount;
-
-        if (isAnnotation)
-        {
-            token.Type = LCDDL_TOKEN_TYPE_ANNOTATION;
-            return token;
-        }
-        else if (expectingIdentifier)
-        {
-            token.Type = LCDDL_TOKEN_TYPE_IDENTIFIER;
-            expectingIdentifier = 0;
-            return token;
-        }
-        else
-        {
-            token.Type = LCDDL_TOKEN_TYPE_TYPENAME;
-            expectingIdentifier = 1;
-            return token;
-        }
-    }
-    else if (lastChar == ';')
-    {
-        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_SEMICOLON,
-                               .LineNumber = lineNumber};
-        lineNumber = lineCount;
-        return token;
-    }
-    else if (lastChar == '{')
-    {
-        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET,
-                               .LineNumber = lineNumber};
-        lineNumber = lineCount;
-        return token;
-    }
-    else if (lastChar == '}')
-    {
-        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET,
-                               .LineNumber = lineNumber};
-        lineNumber = lineCount;
-        return token;
-    }
-    else if (lastChar == '*')
-    {
-        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_ASTERIX,
-                               .LineNumber = lineNumber,
-                               .Value.Integer = 1
-                             };
-        lineNumber = lineCount;
-        while(lcddlFilePeekChar(file) == '*')
-        {
-            lastChar = fgetc(file);
-            ++token.Value.Integer;
-        }
-        return token;
-    }
-    else if (lastChar == '[')
-    {
-        if (isdigit(lcddlFilePeekChar(file)))
-        {
-            uint32_t arrayCount;
-            arrayCount = lcddlReadIntFromFile(file, &lastChar);
-
-            if (lastChar != ']')
-            {
-                LCDDL_ERRORF(lineCount,
-                             "Expected ']'. Instead got: '%c'.",
-                             lastChar);
-            }
-
-            lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_SQUARE_BRACKETS,
-                                   .LineNumber = lineNumber,
-                                   .Value.Integer = arrayCount
-                                 };
-            lineNumber = lineCount;
-            return token;
-        }
-        else
-        {
-            LCDDL_ERROR(lineCount, "Expected a numeric value.");
-        }
-    }
-    else if (lastChar == '#')
-    {
-        for (;(lastChar = fgetc(file)) != '\n';);
-        ++lineCount;
-        return lcddlGetToken(file);
+        return result;
     }
     else
     {
-        lcddlToken_t token = { .Type = LCDDL_TOKEN_TYPE_UNKNOWN,
-                               .LineNumber = lineNumber};
-        lineNumber = lineCount;
-        return token;
-    }
-
-}
-
-static lcddlNode_t *
-lcddlParse(FILE *file)
-{
-    lcddlNode_t *topLevelFirst = NULL;
-    lcddlNode_t *topLevelLast = NULL;
-
-    lcddlNode_t *parent = NULL;
-
-    lcddlAnnotation_t *annotations = NULL;
-
-    lcddlToken_t token = lcddlGetToken(file);
-    for (; token.Type != LCDDL_TOKEN_TYPE_EOF; token = lcddlGetToken(file))
-    {
-        if (token.Type == LCDDL_TOKEN_TYPE_ANNOTATION)
+        if (global_current_token.type == TOKEN_TYPE_equals)
+        // NOTE(tbt): type has been ommited - go straight to value;
         {
-            lcddlAnnotation_t *annotation = malloc(sizeof(lcddlAnnotation_t));
-            annotation->Next = NULL;
-            memcpy(annotation->Tag,
-                   token.Value.String, 32);
+            eat(f, TOKEN_TYPE_equals);
+            value = global_current_token.value;
+            eat(f, TOKEN_TYPE_value);
 
-            if (!(annotations))
-            {
-                annotations = annotation;
-            }
-            else
-            {
-                lcddlAnnotation_t *head;
-                for (head = annotations;
-                     head->Next;
-                     head = head->Next);
+            LcddlNode *result  = calloc(sizeof(*result), 1);
+            result->identifier = identifier;
+            result->value      = value;
 
-                head->Next = annotation;
-            }
-        }
-        else if (token.Type == LCDDL_TOKEN_TYPE_TYPENAME)
-        {
-            lcddlNode_t *node = malloc(sizeof *node);
-
-            node->Tags = annotations;
-            node->Children = NULL;
-            node->Next = NULL;
-            annotations = NULL;
-            node->IndirectionLevel = 0;
-            node->ArrayCount = 1;
-
-            memcpy(node->Type,
-                   token.Value.String, 32);
-
-            token = lcddlGetToken(file);
-
-            if (token.Type == LCDDL_TOKEN_TYPE_ASTERIX) 
-            {
-                node->IndirectionLevel = token.Value.Integer;
-                token = lcddlGetToken(file);
-            }
-
-            if (token.Type == LCDDL_TOKEN_TYPE_IDENTIFIER)
-            {
-                memcpy(node->Name,
-                       token.Value.String, 32);
-                token = lcddlGetToken(file);
-            }
-            else
-            {
-                LCDDL_ERROR(token.LineNumber, "Expected an identifier.");
-            }
-
-            if (token.Type == LCDDL_TOKEN_TYPE_SQUARE_BRACKETS)
-            {
-                node->ArrayCount = token.Value.Integer;
-                token = lcddlGetToken(file);
-            }
-
-            if (parent)
-            {
-                if (!(parent->Children))
-                {
-                    parent->Children = node;
-                }
-                else
-                {
-                    lcddlNode_t *head;
-                    for (head = parent->Children;
-                         head->Next;
-                         head = head->Next);
-
-                    head->Next = node;
-                }
-            }
-            else
-            {
-                if (!topLevelFirst)
-                    topLevelFirst = node;
-                if (topLevelLast)
-                    topLevelLast->Next = node;
-                topLevelLast = node;
-            }
-
-            if (0 == strcmp(node->Type, "struct"))
-            {
-                if (parent != NULL)
-                {
-                    LCDDL_ERROR(token.LineNumber,
-                                "Nested structs are not allowed.");
-                }
-                if (token.Type != LCDDL_TOKEN_TYPE_OPEN_CURLY_BRACKET)
-                {
-                    LCDDL_ERROR(token.LineNumber,
-                                "Struct declarations must be followed by a "
-                                "curly bracket block.");
-                }
-                parent = node;
-            }
-            else
-            {
-                if(token.Type != LCDDL_TOKEN_TYPE_SEMICOLON)
-                {
-                    LCDDL_ERROR(token.LineNumber,
-                                "Expected a semicolon.");
-                }
-            }
-        }
-        else if (token.Type == LCDDL_TOKEN_TYPE_CLOSE_CURLY_BRACKET)
-        {
-            parent = NULL;
+            return result;
         }
         else
         {
-            LCDDL_ERRORF(token.LineNumber,
-                         "Unexpected token %s.",
-                         lcddlTokenTypeToString(token.Type));
+            LcddlNode *result  = calloc(sizeof(*result), 1);
+
+            type = global_current_token.value;
+            eat(f, TOKEN_TYPE_type);
+
+            if (global_current_token.type == TOKEN_TYPE_equals)
+            {
+                eat(f, TOKEN_TYPE_equals);
+                value = global_current_token.value;
+                eat(f, TOKEN_TYPE_value);
+            }
+
+            result->identifier = identifier;
+            result->type       = type;
+            result->value      = value;
+
+            return result;
         }
-
-        
     }
-
-    if (parent)
-    {
-        LCDDL_WARN("Missing '}'");
-    }
-
-    return topLevelFirst;
 }
 
-static void
-lcddlFreeNode(lcddlNode_t *node)
+typedef void (*UserInitCallback)(void);
+typedef void (*UserTopLevelCallback)(char *, LcddlNode *);
+typedef void (*UserCleanupCallback)(void);
+
+typedef struct
 {
-    lcddlNode_t *child = node->Children;
-    while (child)
+    UserInitCallback user_init_callback;
+    UserTopLevelCallback user_top_level_callback;
+    UserCleanupCallback user_cleanup_callback;
+} UserCallbacks;
+
+internal UserCallbacks get_user_callback_functions(char *lib_path);
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+internal UserCallbacks
+get_user_callback_functions(char *lib_path)
+{
+    UserCallbacks result;
+
+    HINSTANCE library = LoadLibrary(lib_path);
+    if (!library)
     {
-        lcddlNode_t *prev = child;
-        child = child->Next;
-        lcddlFreeNode(prev);
+        LCDDL_ERRORF("Could not open custom layer library '%s'", lib_path);
     }
 
-    lcddlAnnotation_t *tag = node->Tags;
-    while (tag)
+    result.user_init_callback      = (UserInitCallback)GetProcAddress(library, "lcddl_user_init_callback");
+    result.user_top_level_callback = (UserTopLevelCallback)GetProcAddress(library, "lcddl_user_top_level_callback");
+    result.user_cleanup_callback   = (UserCleanupCallback)GetProcAddress(library, "lcddl_user_cleanup_callback");
+
+    if (!result.user_init_callback      ||
+        !result.user_top_level_callback ||
+        !result.user_cleanup_callback)
     {
-        lcddlAnnotation_t *prev = tag;
-        tag = tag->Next;
-        free(prev);
+        LCDDL_ERRORF("Could not find all required callbacks in custom layer library '%s'", lib_path);
     }
 
-    free(node);
+    return result;
 }
-
-int main(int argc, char **argv)
+#else
+internal UserCallbacks
+get_user_callback_functions(char *lib_path)
 {
-#ifdef _WIN32
-#include "windowsLogInit.c"
+    UserCallbacks result;
+
+    void *library = dlopen(lib_path, RTLD_NOW | RTLD_GLOBAL);
+    if (!library)
+    {
+        LCDDL_ERRORF("Could not open user layer library '%s'", lib_path);
+    }
+
+    result.user_init_callback      = dlsym(library, "lcddl_user_init_callback");
+    result.user_top_level_callback = dlsym(library, "lcddl_user_top_level_callback");
+    result.user_cleanup_callback   = dlsym(library, "lcddl_user_cleanup_callback");
+
+    if (!result.user_init_callback      ||
+        !result.user_top_level_callback ||
+        !result.user_cleanup_callback)
+    {
+        LCDDL_ERRORF("Could not find all required callbacks in user layer library '%s'", lib_path);
+    }
+
+    return result;
+}
 #endif
-    lcddlUserInitCallback();
 
-    int i;
-    for (i = 1; i < argc; ++i)
+internal LcddlNode *
+parse_file(char *path)
+{
+    FILE *f = fopen(path, "r");
+
+    global_current_line = 1;
+    global_current_token = get_next_token(f);
+    strncpy(global_current_file, path, PATH_MAX_LEN);
+    LcddlNode *result = statement_list(f);
+
+    fclose(f);
+    return result;
+}
+
+int
+main(int argc,
+     char **argv)
+{
+    if (argc < 3)
     {
-        FILE *file = fopen(argv[i], "rt");
-        if (!file)
+        fprintf(stderr, "Usage: %s custom_layer_library path input_file_1 input_file_2...\n", argv[0]);
+    }
+
+    UserCallbacks callbacks = get_user_callback_functions(argv[1]);
+
+    callbacks.user_init_callback();
+
+    for (int i = 2;
+         i < argc;
+         ++i)
+    {
+        LcddlNode *root = parse_file(argv[i]);
+
+        for (LcddlNode *node = root->first_child;
+             NULL != node;
+             node = node->next_sibling)
         {
-            LCDDL_ERRORF(0, "Could not open input file: %s", argv[i]);
+            callbacks.user_top_level_callback(argv[i], node);
         }
-
-        lcddlNode_t *ast = lcddlParse(file);
-
-        lcddlNode_t *node = ast;
-        lcddlUserTopLevelCallback(node);
-        while (node->Next)
-        {
-            node = node->Next;
-            lcddlUserTopLevelCallback(node);
-        }
-
-        node = ast;
-        while (node)
-        {
-            lcddlNode_t *prev = node;
-            node = node->Next;
-
-            lcddlFreeNode(prev);
-        }
-
-        fclose(file);
     }
 
-    lcddlUserCleanupCallback();
-#ifdef _WIN32
-#include "windowsLogDeinit.c"
-#endif
+    callbacks.user_cleanup_callback();
+
+    return EXIT_SUCCESS;
 }
 
-/*****************************************************************************/
-/* utility functions to assist introspection and code generation             */
-/*****************************************************************************/
-
-static void
-lcddlWriteFieldToFileAsC(FILE *file,
-                          lcddlNode_t *node,
-                          int indentation)
-{
-    int i;
-
-    for (i = 0; i < indentation; ++i)
-    {
-        fprintf(file, " ");
-    }
-
-    fprintf(file,
-            "%s ",
-            node->Type);
-
-    for (i = 0; i < node->IndirectionLevel; ++i)
-    {
-        fprintf(file, "*");
-    }
-
-    fprintf(file, "%s", node->Name);
-
-    if (node->ArrayCount > 1)
-    {
-        fprintf(file, "[%d]", node->ArrayCount);
-    }
-
-    fprintf(file, ";\n");
-}
-
-static void
-lcddlWriteStructToFileAsC(FILE *file,
-                           lcddlNode_t *node)
-{
-    fprintf(file, "typedef struct %s %s;\n", node->Name, node->Name);
-    fprintf(file, "struct %s\n{\n", node->Name);
-
-    lcddlNode_t *member;
-    for (member = node->Children;
-         member;
-         member = member->Next)
-    {
-        lcddlWriteFieldToFileAsC(file, member, 4);
-    }
-
-    fprintf(file, "};\n");
-}
-
-void
-lcddlWriteNodeToFileAsC(FILE *file,
-                         lcddlNode_t *node)
-{
-    if (node->Children)
-    {
-        lcddlWriteStructToFileAsC(file, node);
-    }
-    else
-    {
-        lcddlWriteFieldToFileAsC(file, node, 0);
-    }
-    fprintf(file, "\n");
-}
-
-uint8_t lcddlNodeHasTag(lcddlNode_t *node, char *tag)
-{
-    lcddlAnnotation_t *annotation;
-    for (annotation = node->Tags;
-         annotation;
-         annotation = annotation->Next)
-    {
-        /* NOTE(tbt): increment the annotation's string to ignore the '@'
-           symbol
-        */
-        if (0 == strcmp(annotation->Tag + 1, tag)) return 1;
-    }
-    return 0;
-}

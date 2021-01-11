@@ -1,16 +1,29 @@
 # LCDDL
-_LCDDL_ is a simple utility which which parses a minimal data-description
-format to construct a corresponding abstract syntax tree, which may be
-introspected upon by user layer code in order to perform compile-time code
-generation, or any other task for which this utility may be suited.
-_LCDDL_ is part of [lucerna](https://github.com/tomthornt0n/lucerna).
-## Usage
-#### 1. Write an input file
-See `example.lcd` for more info.
-#### 2. Write a custom layer
-Fill out the functions in `lcddlUserLayer.c`.
-#### 3. Build LCDDL
-* with GCC: `gcc lcddl.c lcddlUserLayer.c -o lcddl`
-* with Visual Studio: `cl lcddl.c lcddlUserLayer.c /link /out:lcddl.exe`
-#### 4. Run LCDDL
-`./lcddl path/to/input/file1.lcd path/to/input/file2.lcd ...`
+
+LCDDL is a small utitility to allow for compile time type introspection in languages such as C.
+
+It parses a simple format which describes a series of declarations into a 'list of lists' style tree, which is then passes to a custom user layer, which can then use this data for whatever your project requires.  
+
+LCDDL was recently rewritten and some features that were previously avaible are currently missing:
+* arrays
+* pointers
+* annotations
+
+---
+
+## Documentations:
+### Building LCDDL:
+#### On Windows:
+> To build LCDDL on windows, `cl` must be in your path. The easiest way to achieve this is by using a visual studio developer command prompt. This can be found by searching for 'x64 Native Tools Command Prompt for VS\*\*\*\*'
+* First build LCDDL itself: `.\windows_build.bat`
+* Next, build the user layer: `cl /nologo [path to user layer source files] /link /nologo /dll /out:lcddl_user_layer.dll`
+#### On \*nix:
+* Run the build script to build LCDDL itself: `./linux_build.sh`
+* Build the user layer: `gcc [path to user layer source files] -fPIC -shared -o lcddl_user_layer.so`
+### Running LCDDL:
+* lcddl can be run with `./lcddl (path to shared library) (input file 1) (input file 2) ...`
+### Writing a user layer:
+* fill out the function stubs provided in `lcddl_user_layer.c`
+### Writing input files:
+* see `example.lcd` for more details
+
