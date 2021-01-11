@@ -59,6 +59,7 @@ enum
     TOKEN_TYPE_close_square_bracket,
     TOKEN_TYPE_integral_literal,
     TOKEN_TYPE_asterix,
+    TOKEN_TYPE_at_symbol,
     TOKEN_TYPE_semicolon,
     TOKEN_TYPE_eof,
 };
@@ -247,19 +248,11 @@ get_next_token(FILE *f)
     }
     else if (c == '*')
     {
-        int size      = 2;
-        result.type   = TOKEN_TYPE_asterix;
-        result.value  = malloc(size);
-        *result.value = c;
-
-        while (fpeekc(f) == '*')
-        {
-            c = fgetc(f);
-            ++size;
-            result.value = realloc(result.value, size);
-            result.value[size - 2] = c;
-        }
-        result.value[size - 1] = 0;
+        result.type = TOKEN_TYPE_asterix;
+    }
+    else if (c == '@')
+    {
+        result.type = TOKEN_TYPE_at_symbol;
     }
     else if (c == ';')
     {
@@ -397,11 +390,10 @@ declaration(FILE *f)
             result->type = global_current_token.value;
             eat(f, TOKEN_TYPE_type);
 
-            if (global_current_token.type == TOKEN_TYPE_asterix)
-            // NOTE(tbt): declaration is a pointer
+            while (global_current_token.type == TOKEN_TYPE_asterix)
             {
-                result->indirection_level = strlen(global_current_token.value);
                 eat(f, TOKEN_TYPE_asterix);
+                ++result->indirection_level;
             }
 
             if (global_current_token.type == TOKEN_TYPE_equals)
