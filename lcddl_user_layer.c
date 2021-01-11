@@ -7,23 +7,41 @@ internal void
 print_tree(LcddlNode *root,
            int indent)
 {
-    for (int i = indent;
-         i;
-         --i)
+    for (int i = indent; i; --i)
     {
         putc(' ', stderr);
     }
-    fprintf(stderr, root->name);
+
+    if (root->first_annotation)
+    {
+        for (LcddlNode *annotation = root->first_annotation;
+             NULL != annotation;
+             annotation = annotation->next_annotation)
+        {
+            fprintf(stderr, "@%s", annotation->name);
+            if (annotation->value)
+            {
+                fprintf(stderr, "(%s)", annotation->value);
+            }
+            fprintf(stderr, "; ");
+        }
+        putc('\n', stderr);
+        for (int i = indent; i; --i)
+        {
+            putc(' ', stderr);
+        }
+    }
+
+    fprintf(stderr, "%s", root->name);
+
     if (root->type)
     {
+        fprintf(stderr, " : ");
         if (root->array_count)
         {
-            fprintf(stderr, " : [%u]%s", root->array_count, root->type);
+            fprintf(stderr, "[%u]", root->array_count);
         }
-        else
-        {
-            fprintf(stderr, " : %s", root->type);
-        }
+        fprintf(stderr, "%s", root->type);
 
         if (root->indirection_level)
         {

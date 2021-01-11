@@ -57,6 +57,8 @@ enum
     TOKEN_TYPE_close_curly_bracket,
     TOKEN_TYPE_open_square_bracket,
     TOKEN_TYPE_close_square_bracket,
+    TOKEN_TYPE_open_bracket,
+    TOKEN_TYPE_close_bracket,
     TOKEN_TYPE_integral_literal,
     TOKEN_TYPE_asterix,
     TOKEN_TYPE_at_symbol,
@@ -64,20 +66,23 @@ enum
     TOKEN_TYPE_eof,
 };
 
-#define TOKEN_TYPE_TO_STRING(_token_type)                                        \
-    ((_token_type) == TOKEN_TYPE_none                 ? "none" :                 \
-     (_token_type) == TOKEN_TYPE_name                 ? "name" :                 \
-     (_token_type) == TOKEN_TYPE_colon                ? "colon" :                \
-     (_token_type) == TOKEN_TYPE_type                 ? "type" :                 \
-     (_token_type) == TOKEN_TYPE_equals               ? "equals" :               \
-     (_token_type) == TOKEN_TYPE_value                ? "value" :                \
-     (_token_type) == TOKEN_TYPE_open_curly_bracket   ? "open_curly_bracket" :   \
-     (_token_type) == TOKEN_TYPE_close_curly_bracket  ? "close_curly_bracket" :  \
-     (_token_type) == TOKEN_TYPE_open_square_bracket  ? "open_square_bracket" :  \
-     (_token_type) == TOKEN_TYPE_close_square_bracket ? "close_square_bracket" : \
-     (_token_type) == TOKEN_TYPE_integral_literal     ? "integral literal" :     \
-     (_token_type) == TOKEN_TYPE_asterix              ? "asterix" :              \
-     (_token_type) == TOKEN_TYPE_semicolon            ? "semicolon" :            \
+#define TOKEN_TYPE_TO_STRING(_token_type)                                    \
+    ((_token_type) == TOKEN_TYPE_none                 ? "none" :             \
+     (_token_type) == TOKEN_TYPE_name                 ? "name" :             \
+     (_token_type) == TOKEN_TYPE_colon                ? ":" :                \
+     (_token_type) == TOKEN_TYPE_type                 ? "type" :             \
+     (_token_type) == TOKEN_TYPE_equals               ? "=" :                \
+     (_token_type) == TOKEN_TYPE_value                ? "value" :            \
+     (_token_type) == TOKEN_TYPE_open_curly_bracket   ? "{" :                \
+     (_token_type) == TOKEN_TYPE_close_curly_bracket  ? "}" :                \
+     (_token_type) == TOKEN_TYPE_open_square_bracket  ? "[" :                \
+     (_token_type) == TOKEN_TYPE_close_square_bracket ? "]" :                \
+     (_token_type) == TOKEN_TYPE_open_bracket         ? "(" :                \
+     (_token_type) == TOKEN_TYPE_close_bracket        ? ")" :                \
+     (_token_type) == TOKEN_TYPE_integral_literal     ? "integral literal" : \
+     (_token_type) == TOKEN_TYPE_asterix              ? "*" :                \
+     (_token_type) == TOKEN_TYPE_at_symbol            ? "@" :                \
+     (_token_type) == TOKEN_TYPE_semicolon            ? ";" :                \
      (_token_type) == TOKEN_TYPE_eof                  ? "eof" : NULL)
 
 typedef struct
@@ -105,9 +110,10 @@ get_next_token(FILE *f)
 {
     Token result = {0};
     int c = fgetc(f);
-    static bool expecting_type    = false;
-    static bool expecting_value   = false;
-    static bool expecting_integer = false;
+    static bool expecting_type             = false;
+    static bool expecting_value            = false;
+    static bool expecting_integer          = false;
+    static bool expecting_annotation_value = false;
 
     // NOTE(tbt): ignore white space
     while (isspace((unsigned char)c))
@@ -138,6 +144,29 @@ get_next_token(FILE *f)
 
         value[value_len++] = c;
         while (fpeekc(f) != ';')
+        {
+            c = fgetc(f);
+            value[value_len++] = c;
+
+            if (value_len > value_capacity)
+            {
+                value_capacity += STRING_CHUNK_SIZE;
+                value = realloc(value, value_capacity);
+            }
+        }
+
+        result.type  = TOKEN_TYPE_value;
+        result.value = value;
+    }
+    else if (expecting_annotation_value)
+    {
+        expecting_annotation_value = false;
+
+        int value_len = 0, value_capacity = STRING_CHUNK_SIZE;
+        char *value = calloc(value_capacity, 1);
+
+        value[value_len++] = c;
+        while (fpeekc(f) != ')')
         {
             c = fgetc(f);
             value[value_len++] = c;
@@ -246,6 +275,16 @@ get_next_token(FILE *f)
         expecting_integer = false;
         result.type       = TOKEN_TYPE_close_square_bracket;
     }
+    else if (c == '(')
+    {
+        expecting_annotation_value = true;
+        result.type                = TOKEN_TYPE_open_bracket;
+    }
+    else if (c == ')')
+    {
+        expecting_annotation_value = false;
+        result.type                = TOKEN_TYPE_close_bracket;
+    }
     else if (c == '*')
     {
         result.type = TOKEN_TYPE_asterix;
@@ -292,11 +331,17 @@ eat(FILE *f,
 internal LcddlNode *statement(FILE *f);
 internal LcddlNode *statement_list(FILE *f);
 internal LcddlNode *declaration(FILE *f);
+internal LcddlNode *annotation(FILE *f);
 
 internal LcddlNode *
 statement(FILE *f)
 {
-    LcddlNode *result;
+    LcddlNode *result, *annotations = NULL;
+
+    if (global_current_token.type == TOKEN_TYPE_at_symbol)
+    {
+        annotations = annotation(f);
+    }
 
     if (global_current_token.type == TOKEN_TYPE_open_curly_bracket)
     {
@@ -316,6 +361,7 @@ statement(FILE *f)
                      TOKEN_TYPE_TO_STRING(global_current_token.type));
     }
 
+    result->first_annotation = annotations;
     return result;
 }
 
@@ -324,9 +370,10 @@ statement_list(FILE *f)
 {
     LcddlNode *result = calloc(1, sizeof(*result));
 
-    while (global_current_token.type == TOKEN_TYPE_name ||
-           global_current_token.type == TOKEN_TYPE_open_curly_bracket)
-    // NOTE(tbt): statements can begin with an identifier or a curly bracket.
+    while (global_current_token.type == TOKEN_TYPE_name               ||
+           global_current_token.type == TOKEN_TYPE_open_curly_bracket ||
+           global_current_token.type == TOKEN_TYPE_at_symbol)
+    // NOTE(tbt): statements can begin with an identifier, a curly bracket or an at sign.
     {
         LcddlNode *child    = statement(f);
         child->next_sibling = result->first_child;
@@ -406,6 +453,39 @@ declaration(FILE *f)
             }
         }
     }
+
+    return result;
+}
+
+internal LcddlNode *
+annotation(FILE *f)
+{
+    LcddlNode *result = NULL;
+
+    do
+    {
+        if (global_current_token.type == TOKEN_TYPE_semicolon)
+        {
+            eat(f, TOKEN_TYPE_semicolon);
+        }
+
+        eat(f, TOKEN_TYPE_at_symbol);
+
+        LcddlNode *annotation = calloc(sizeof(*annotation), 1);
+        annotation->name = global_current_token.value;
+        eat(f, TOKEN_TYPE_name);
+
+        if (global_current_token.type == TOKEN_TYPE_open_bracket)
+        {
+            eat(f, TOKEN_TYPE_open_bracket);
+            annotation->value = global_current_token.value;
+            eat(f, TOKEN_TYPE_value);
+            eat(f, TOKEN_TYPE_close_bracket);
+        }
+
+        annotation->next_annotation = result;
+        result = annotation;
+    } while (global_current_token.type == TOKEN_TYPE_semicolon);
 
     return result;
 }
@@ -496,6 +576,7 @@ main(int argc,
     if (argc < 3)
     {
         fprintf(stderr, "Usage: %s custom_layer_library path input_file_1 input_file_2...\n", argv[0]);
+        return EXIT_FAILURE;
     }
 
     UserCallbacks callbacks = get_user_callback_functions(argv[1]);

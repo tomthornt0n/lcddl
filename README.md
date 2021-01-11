@@ -6,11 +6,7 @@ It parses a simple format which describes a series of declarations into a 'list 
 
 It has been tested on Arch Linux and Windows 10, but should theoretically work on any POSIX compliant OS.
 
-LCDDL was recently rewritten and some features that were previously avaible are currently missing (see issues):
-* ~~arrays~~
-* ~~pointers~~
-* annotations
-
+LCDDL was recently rewritten and some features that were previously avaible are currently missing (see [GitHub issues](https://github.com/tomthornt0n/lcddl/issues?q=is%3Aissue+is%3Aopen)).
 The old version is available on the `legacy` branch.
 
 ---

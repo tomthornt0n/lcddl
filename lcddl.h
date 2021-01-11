@@ -6,7 +6,12 @@
 typedef struct LcddlNode LcddlNode;
 struct LcddlNode
 {
-    LcddlNode *first_child, *next_sibling;
+    LcddlNode *first_child, *first_annotation;
+    union
+    {
+        LcddlNode *next_sibling;
+        LcddlNode *next_annotation;
+    };
     char *name, *type, *value;
     unsigned int array_count; // NOTE(tbt): the number of elements in the array. normal declarations have an `array_count` of 0
     unsigned int indirection_level; // NOTE(tbt): the indirection level of the pointer. normal declarations have an `indirection level` of 0
