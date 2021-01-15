@@ -1,92 +1,150 @@
 #include <stdio.h>
-
 #include "lcddl.h"
 
-//sample function to recursively print the tree
 internal void
-print_tree(LcddlNode *root,
-           int indent)
+print_ast(int indent,
+          LcddlNode *root)
 {
-    for (int i = indent; i; --i)
-    {
-        putc(' ', stderr);
-    }
+    for (int i = indent; i; --i) { putc('\t', stderr); }
 
-    if (root->first_annotation)
+    switch(root->kind)
     {
-        for (LcddlNode *annotation = root->first_annotation;
-             NULL != annotation;
-             annotation = annotation->next_annotation)
+        case LCDDL_NODE_KIND_root:
         {
-            fprintf(stderr, "@%s", annotation->name);
-            if (annotation->value)
+            fprintf(stderr, "root\n");
+            for (LcddlNode *child = root->first_child;
+                 NULL != child;
+                 child = child->next_sibling)
             {
-                fprintf(stderr, "(%s)", annotation->value);
+                print_ast(indent + 1, child);
             }
-            fprintf(stderr, "; ");
+            break;
         }
-        putc('\n', stderr);
-        for (int i = indent; i; --i)
+        case LCDDL_NODE_KIND_declaration:
         {
-            putc(' ', stderr);
+            fprintf(stderr, "declaration: %s\n", root->declaration.name);
+
+            if (root->first_annotation)
+            {
+                for (int i = indent; i; --i) { putc('\t', stderr); }
+                fprintf(stderr, " ~annotations:\n");
+                for (LcddlNode *annotation = root->first_annotation;
+                     NULL != annotation;
+                     annotation = annotation->next_annotation)
+                {
+                    print_ast(indent + 1, annotation);
+                }
+            }
+
+            if (root->declaration.type)
+            {
+                for (int i = indent; i; --i) { putc('\t', stderr); }
+                fprintf(stderr, " ~type:\n");
+                print_ast(indent + 1, root->declaration.type);
+            }
+
+            if (root->declaration.value)
+            {
+                for (int i = indent; i; --i) { putc('\t', stderr); }
+                fprintf(stderr, " ~value:\n");
+                print_ast(indent + 1, root->declaration.value);
+            }
+
+            if (root->first_child)
+            {
+                for (int i = indent; i; --i) { putc('\t', stderr); }
+                fprintf(stderr, " ~children:\n");
+                for (LcddlNode *child = root->first_child;
+                     NULL != child;
+                     child = child->next_sibling)
+                {
+                    print_ast(indent + 1, child);
+                }
+            }
+            break;
         }
-    }
-
-    fprintf(stderr, "%s", root->name);
-
-    if (root->type)
-    {
-        fprintf(stderr, " : ");
-        if (root->array_count)
+        case LCDDL_NODE_KIND_type:
         {
-            fprintf(stderr, "[%u]", root->array_count);
-        }
-        fprintf(stderr, "%s", root->type);
-
-        if (root->indirection_level)
-        {
-            for (int i = root->indirection_level;
-                 i;
+            fprintf(stderr, "type: ");
+            if (root->type.array_count)
+            {
+                fprintf(stderr, "[%u]", root->type.array_count);
+            }
+            fprintf(stderr, "%s", root->type.type_name);
+            for (int i = root->type.indirection_level;
+                 0 != i;
                  --i)
             {
                 putc('*', stderr);
             }
+                putc('\n', stderr);
+            break;
+        }
+        case LCDDL_NODE_KIND_annotation:
+        {
+            fprintf(stderr, "annotation: %s\n", root->annotation.tag);
+            if (root->annotation.value)
+            {
+                for (int i = indent; i; --i) { putc('\t', stderr); }
+                fprintf(stderr, " ~value:\n");
+                print_ast(indent + 1, root->annotation.value);
+            }
+            break;
+        }
+        case LCDDL_NODE_KIND_file:
+        {
+            fprintf(stderr, "file: %s\n", root->file.filename);
+            for (LcddlNode *child = root->first_child;
+                 NULL != child;
+                 child = child->next_sibling)
+            {
+                print_ast(indent + 1, child);
+            }
+            break;
+        }
+        case LCDDL_NODE_KIND_float_literal:
+        {
+            fprintf(stderr, "float literal: %s\n", root->literal.value);
+            break;
+        }
+        case LCDDL_NODE_KIND_integer_literal:
+        {
+            fprintf(stderr, "integer literal: %s\n", root->literal.value);
+            break;
+        }
+        case LCDDL_NODE_KIND_string_literal:
+        {
+            fprintf(stderr, "string literal: %s\n", root->literal.value);
+            break;
+        }
+        case LCDDL_NODE_KIND_variable_reference:
+        {
+            fprintf(stderr, "variable reference: %s\n", root->var_reference.name);
+            break;
+        }
+        case LCDDL_NODE_KIND_binary_operator:
+        {
+            fprintf(stderr, "binary operator: %s\n", lcddl_operator_kind_to_string(root->binary_operator.kind));
+            for (int i = indent; i; --i) { putc('\t', stderr); }
+            fprintf(stderr, " ~left:\n");
+            print_ast(indent + 1, root->binary_operator.left);
+            for (int i = indent; i; --i) { putc('\t', stderr); }
+            fprintf(stderr, " ~right:\n");
+            print_ast(indent + 1, root->binary_operator.right);
+            break;
+        }
+        case LCDDL_NODE_KIND_unary_operator:
+        {
+            fprintf(stderr, "unary operator: %s\n", lcddl_operator_kind_to_string(root->unary_operator.kind));
+            print_ast(indent + 1, root->unary_operator.operand);
+            break;
         }
     }
-    if (root->value)
-    {
-        fprintf(stderr, " = %s", root->value);
-    }
-    putc('\n', stderr);
-
-    for (LcddlNode *child = root->first_child;
-         NULL != child;
-         child = child->next_sibling)
-    {
-        print_tree(child, indent + 4);
-    }
 }
 
 LCDDL_CALLBACK void
-lcddl_user_init_callback(void)
+lcddl_user_callback(LcddlNode *root)
 {
-    // Called once when lcddl is run
-    fprintf(stderr, "lcddl init callback\n\n");
-}
-
-LCDDL_CALLBACK void
-lcddl_user_top_level_callback(char *file,
-                              LcddlNode *node)
-{
-    // Called for every top level node
-    print_tree(node, 4);
-    putc('\n', stderr);
-}
-
-LCDDL_CALLBACK void
-lcddl_user_cleanup_callback(void)
-{
-    // called just before the program exits
-    fprintf(stderr, "lcddl cleanup callback\n");
+    print_ast(0, root);
 }
 

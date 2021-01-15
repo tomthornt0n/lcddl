@@ -1,33 +1,18 @@
-// this is a comment
-// characters between '#' and '\n' are skipped by the tokeniser
+foo : i32 = 8;
+_bar2 : f64 = 912.872;
 
-
-
-// whitespace is ignored
-
-
-
-foo : i32 = 8; // declarations are in the form `name : type = value;`
-_bar2 : f64 = 912.872; // identifiers must begin with an '_' or a letter and can contain only alphanumeric characters and underscores
-
-// the type or the value can be ommited
-my_float := 19.8;
+my_float := 1 / (4 + 19.8);
 my_unsigned_int : u64;
 
-// compound declarations are in the form `name :: type {(declarations)};`
 example_1 :: struct
 {
-    // any character between an '=' and a ';' is treated as part of the declaration's 'value'
-    // whitespace between the '=' and the first non-whitespace character is truncated
-    // LCDDL does not parse values in any way - they are simply sent to the custom layer as a string
     example_2 : string = "hello, world!";
 
-    @tag_1; @tag_2("this is an annotation value")
+    @tag_1 @tag_2="this is an annotation value"
     example_3 :: union
-    // compound declarations can be nested
     {
-        example_4 : [8]i8; // arrays can be declared by prefixing the type with `[n]` where n is an integral literal corresponding to the number of elements in the array
-        example_5 : u32*;  // a variable can be declared as a pointer to a type by suffixing the type with '*'. The number of '*' corresponds to the level of indirection ('*' is a single pointer, '**' is a double pointer, etc.)
+        example_4 : [8]i8;
+        example_5 : u32*;
     };
 };
 

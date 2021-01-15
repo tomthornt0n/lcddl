@@ -1,3 +1,4 @@
 #!/bin/sh
-gcc -g lcddl.c -rdynamic -ldl -o lcddl
+
+gcc lcddl.c -ldl -o lcddl
 

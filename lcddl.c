@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,356 +8,715 @@
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
     #include <windows.h>
 
-    // HACK(tbt): disable ANSI escape codes for colours on windows
+    // disable ANSI escape codes for colours on windows
     // TODO(tbt): setup the virtual terminal on windows to use ANSI escape codes
-    #define LOG_WARN_BEGIN  "%s:%d WARNING : "
-    #define LOG_ERROR_BEGIN "%s:%d ERROR : "
+    #define LOG_WARN_BEGIN  "%s:%lu WARNING : "
+    #define LOG_ERROR_BEGIN "%s:%lu ERROR : "
 #else
     #include <dlfcn.h>
 
-    #define LOG_WARN_BEGIN   "\x1b[33m%s : line %d : WARNING : \x1b[0m"
-    #define LOG_ERROR_BEGIN  "\x1b[31m%s : line %d : ERROR : \x1b[0m"
+    #define LOG_WARN_BEGIN   "\x1b[33m%s : line %lu : WARNING : \x1b[0m"
+    #define LOG_ERROR_BEGIN  "\x1b[31m%s : line %lu : ERROR : \x1b[0m"
 #endif
 
-#define LCDDL_WARN(_message) fprintf(stderr,                            \
-                                     LOG_WARN_BEGIN                     \
-                                     _message                           \
-                                     "\n",                              \
-                                     global_current_file,               \
-                                     global_current_line)
+///////////////////////////////////////////
+// UTILITIES
+//
 
-#define LCDDL_ERROR(_message) fprintf(stderr,                           \
-                                      LOG_ERROR_BEGIN                   \
-                                      _message                          \
-                                      "\n",                             \
-                                      global_current_file,              \
-                                      global_current_line);             \
-                              exit(EXIT_FAILURE)
+#define print_warning(_stream, _message) fprintf(stderr,                                \
+                                                 LOG_WARN_BEGIN                         \
+                                                 _message                               \
+                                                 "\n",                                  \
+                                                 (_stream)->path,                       \
+                                                 (_stream)->current_token.line);              \
 
-#define LCDDL_ERRORF(_message, ...) fprintf(stderr,                     \
-                                            LOG_ERROR_BEGIN             \
-                                            _message                    \
-                                            "\n",                       \
-                                            global_current_file,        \
-                                            global_current_line,        \
-                                            __VA_ARGS__);               \
-                                    exit(EXIT_FAILURE)
+#define print_error_and_exit(_stream, _message) fprintf(stderr,                         \
+                                                        LOG_ERROR_BEGIN                 \
+                                                        _message                        \
+                                                        "\n",                           \
+                                                        (_stream)->path,                \
+                                                        (_stream)->current_token.line);       \
+                                                exit(EXIT_FAILURE)
 
-enum
+#define print_error_and_exit_f(_stream, _message, ...) fprintf(stderr,                  \
+                                                               LOG_ERROR_BEGIN          \
+                                                               _message                 \
+                                                               "\n",                    \
+                                                               (_stream)->path,         \
+                                                               (_stream)->current_token.line, \
+                                                               __VA_ARGS__);            \
+                                                       exit(EXIT_FAILURE)
+
+internal bool
+is_char_space(char c)
 {
-    TOKEN_TYPE_none,
+    if (c == ' '  ||
+        c == '\t' ||
+        c == '\n' ||
+        c == '\r' ||
+        c == '\f' ||
+        c == '\0')
+    {
+        return true;
+    }
+    return false;
+}
 
-    TOKEN_TYPE_name,
-    TOKEN_TYPE_colon,
-    TOKEN_TYPE_type,
-    TOKEN_TYPE_equals,
-    TOKEN_TYPE_value,
-    TOKEN_TYPE_open_curly_bracket,
-    TOKEN_TYPE_close_curly_bracket,
-    TOKEN_TYPE_open_square_bracket,
-    TOKEN_TYPE_close_square_bracket,
-    TOKEN_TYPE_open_bracket,
-    TOKEN_TYPE_close_bracket,
-    TOKEN_TYPE_integral_literal,
-    TOKEN_TYPE_asterix,
-    TOKEN_TYPE_at_symbol,
-    TOKEN_TYPE_semicolon,
-    TOKEN_TYPE_eof,
-};
+internal bool
+is_char_alphanumeric(char c)
+{
+    if ((c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9'))
+    {
+        return true;
+    }
+    return false;
+}
 
-#define TOKEN_TYPE_TO_STRING(_token_type)                                    \
-    ((_token_type) == TOKEN_TYPE_none                 ? "none" :             \
-     (_token_type) == TOKEN_TYPE_name                 ? "name" :             \
-     (_token_type) == TOKEN_TYPE_colon                ? ":" :                \
-     (_token_type) == TOKEN_TYPE_type                 ? "type" :             \
-     (_token_type) == TOKEN_TYPE_equals               ? "=" :                \
-     (_token_type) == TOKEN_TYPE_value                ? "value" :            \
-     (_token_type) == TOKEN_TYPE_open_curly_bracket   ? "{" :                \
-     (_token_type) == TOKEN_TYPE_close_curly_bracket  ? "}" :                \
-     (_token_type) == TOKEN_TYPE_open_square_bracket  ? "[" :                \
-     (_token_type) == TOKEN_TYPE_close_square_bracket ? "]" :                \
-     (_token_type) == TOKEN_TYPE_open_bracket         ? "(" :                \
-     (_token_type) == TOKEN_TYPE_close_bracket        ? ")" :                \
-     (_token_type) == TOKEN_TYPE_integral_literal     ? "integral literal" : \
-     (_token_type) == TOKEN_TYPE_asterix              ? "*" :                \
-     (_token_type) == TOKEN_TYPE_at_symbol            ? "@" :                \
-     (_token_type) == TOKEN_TYPE_semicolon            ? ";" :                \
-     (_token_type) == TOKEN_TYPE_eof                  ? "eof" : NULL)
+internal bool
+is_char_number(char c)
+{
+    if (c >= '0' && c <= '9')
+    {
+        return true;
+    }
+    return false;
+}
+
+internal bool
+is_char_letter(char c)
+{
+    if ((c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z'))
+    {
+        return true;
+    }
+    return false;
+}
+
+///////////////////////////////////////////
+// LEXER
+//
+
+typedef enum
+{
+    TOKEN_KIND_none,
+
+    TOKEN_KIND_identifier,               // a series of alphanumeric characters begining with a letter or '_'
+    TOKEN_KIND_integer_literal,          // a series of numbers
+    TOKEN_KIND_float_literal,            // a series of numbers containing exactly one '.'
+    TOKEN_KIND_string_literal,           // a series of characters bounded by '"'
+    TOKEN_KIND_colon,                    // ':'
+    TOKEN_KIND_equals,                   // '='
+    TOKEN_KIND_open_curly_bracket,       // '{'
+    TOKEN_KIND_close_curly_bracket,      // '}'
+    TOKEN_KIND_open_square_bracket,      // '['
+    TOKEN_KIND_close_square_bracket,     // ']'
+    TOKEN_KIND_open_bracket,             // '('
+    TOKEN_KIND_close_bracket,            // ')'
+    TOKEN_KIND_asterisk,                 // '*'
+    TOKEN_KIND_dash,                     // '-'
+    TOKEN_KIND_slash,                    // '/'
+    TOKEN_KIND_add,                      // '+'
+    TOKEN_KIND_tilde,                    // '~'
+    TOKEN_KIND_exclamation,              // '!'
+    TOKEN_KIND_lesser_than,              // '<'
+    TOKEN_KIND_greater_than,             // '>'
+    TOKEN_KIND_lesser_than_or_equal_to,  // '<='
+    TOKEN_KIND_greater_than_or_equal_to, // '>='
+    TOKEN_KIND_equality,                 // '=='
+    TOKEN_KIND_not_equal_to,             // '!='
+    TOKEN_KIND_bit_shift_left,           // '<<'
+    TOKEN_KIND_bit_shift_right,          // '>>'
+    TOKEN_KIND_bitwise_and,              // '&'
+    TOKEN_KIND_bitwise_or,               // '|'
+    TOKEN_KIND_bitwise_xor,              // '^'
+    TOKEN_KIND_boolean_and,              // '&&'
+    TOKEN_KIND_boolean_or,               // '||'
+    TOKEN_KIND_at_symbol,                // '@'
+    TOKEN_KIND_semicolon,                // ';'
+    TOKEN_KIND_eof,                      // EOF
+} TokenKind;
+
+#define token_kind_to_string(_token_kind)                                      \
+    ((_token_kind) == TOKEN_KIND_none                     ? "none" :           \
+     (_token_kind) == TOKEN_KIND_identifier               ? "identifier" :     \
+     (_token_kind) == TOKEN_KIND_integer_literal          ? "integer literal" :\
+     (_token_kind) == TOKEN_KIND_float_literal            ? "float literal" :  \
+     (_token_kind) == TOKEN_KIND_string_literal           ? "string literal" : \
+     (_token_kind) == TOKEN_KIND_colon                    ? ":" :              \
+     (_token_kind) == TOKEN_KIND_equals                   ? "=" :              \
+     (_token_kind) == TOKEN_KIND_open_curly_bracket       ? "{" :              \
+     (_token_kind) == TOKEN_KIND_close_curly_bracket      ? "}" :              \
+     (_token_kind) == TOKEN_KIND_open_square_bracket      ? "[" :              \
+     (_token_kind) == TOKEN_KIND_close_square_bracket     ? "]" :              \
+     (_token_kind) == TOKEN_KIND_open_bracket             ? "(" :              \
+     (_token_kind) == TOKEN_KIND_close_bracket            ? ")" :              \
+     (_token_kind) == TOKEN_KIND_asterisk                 ? "*" :              \
+     (_token_kind) == TOKEN_KIND_dash                     ? "-" :              \
+     (_token_kind) == TOKEN_KIND_slash                    ? "/" :              \
+     (_token_kind) == TOKEN_KIND_add                      ? "+" :              \
+     (_token_kind) == TOKEN_KIND_tilde                    ? "~" :              \
+     (_token_kind) == TOKEN_KIND_lesser_than              ? "<" :              \
+     (_token_kind) == TOKEN_KIND_greater_than             ? ">" :              \
+     (_token_kind) == TOKEN_KIND_lesser_than_or_equal_to  ? "<=" :             \
+     (_token_kind) == TOKEN_KIND_greater_than_or_equal_to ? ">=" :             \
+     (_token_kind) == TOKEN_KIND_equality                 ? "==" :             \
+     (_token_kind) == TOKEN_KIND_not_equal_to             ? "!=" :             \
+     (_token_kind) == TOKEN_KIND_bit_shift_left           ? "<<" :             \
+     (_token_kind) == TOKEN_KIND_bit_shift_right          ? ">>" :             \
+     (_token_kind) == TOKEN_KIND_at_symbol                ? "@" :              \
+     (_token_kind) == TOKEN_KIND_semicolon                ? ";" :              \
+     (_token_kind) == TOKEN_KIND_eof                      ? "eof" : NULL)
+
 
 typedef struct
 {
-    int type;
+    TokenKind kind;
+    unsigned int len;
     char *value;
+    unsigned long line;
 } Token;
 
-#define STRING_CHUNK_SIZE 32
-#define PATH_MAX_LEN      96
+#define PATH_MAX_LEN 96
 
-internal int   global_current_line  = 1;
-internal Token global_current_token = {0};
-internal char  global_current_file[PATH_MAX_LEN] = {0};
-
-int
-fpeekc(FILE *file)
+typedef struct
 {
-    int c = fgetc(file);
-    return c == EOF ? EOF : ungetc(c, file);
+    char *buffer;
+    unsigned long long size;
+    unsigned long long index;
+
+    char *path;
+    unsigned long current_line;
+
+    Token current_token;
+} Stream;
+
+internal Token get_next_token(Stream *stream);
+
+static Stream
+load_entire_file_as_stream(char *filename)
+{
+    Stream result       = {0};
+    result.current_line = 1;
+    result.path         = calloc(1, strlen(filename) + 1);
+    strcpy(result.path, filename);
+    
+    FILE *file = fopen(filename, "rb");
+    if(file)
+    {
+        fseek(file, 0, SEEK_END);
+        result.size     = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        result.buffer   = malloc(result.size);
+        if(result.buffer)
+        {
+            fread(result.buffer, 1, result.size, file);
+        }
+        fclose(file);
+    }
+
+    result.current_token = get_next_token(&result);
+    
+    return result;
+}
+
+internal int
+get_character(Stream *stream)
+{
+    if (stream->index < stream->size)
+    {
+        return (int)stream->buffer[stream->index];
+    }
+    return EOF;
+}
+
+internal int
+peek_character(Stream *stream)
+{
+    if (stream->index + 1 < stream->size)
+    {
+        return (int)stream->buffer[stream->index + 1];
+    }
+    return EOF;
+}
+
+internal void
+consume_character(Stream *stream)
+{
+    stream->index += 1;
 }
 
 internal Token
-get_next_token(FILE *f)
+get_next_token(Stream *stream)
 {
     Token result = {0};
-    int c = fgetc(f);
-    static bool expecting_type             = false;
-    static bool expecting_value            = false;
-    static bool expecting_integer          = false;
-    static bool expecting_annotation_value = false;
+    result.line  = stream->current_line;
+    int c = get_character(stream);
 
     // NOTE(tbt): ignore white space
-    while (isspace((unsigned char)c))
+    while (is_char_space(c))
     {
         if (c == '\n')
         {
-            ++global_current_line;
+            ++stream->current_line;
         }
-        c = fgetc(f);
+        consume_character(stream);
+        c = get_character(stream);
     }
 
     // NOTE(tbt): skip comments
     if (c == '/' &&
-        fpeekc(f) == '/')
+        peek_character(stream) == '/')
     {
-        while (c != '\n') { c = fgetc(f); };
-        ++global_current_line;
-        return get_next_token(f);
-    }
-
-
-    if (expecting_value)
-    {
-        expecting_value = false;
-
-        int value_len = 0, value_capacity = STRING_CHUNK_SIZE;
-        char *value = calloc(value_capacity, 1);
-
-        value[value_len++] = c;
-        while (fpeekc(f) != ';')
+        while (c != '\n')
         {
-            c = fgetc(f);
-            value[value_len++] = c;
-
-            if (value_len > value_capacity)
-            {
-                value_capacity += STRING_CHUNK_SIZE;
-                value = realloc(value, value_capacity);
-            }
+            consume_character(stream);
+            c = get_character(stream);
         }
-
-        result.type  = TOKEN_TYPE_value;
-        result.value = value;
+        ++stream->current_line;
+        return get_next_token(stream);
     }
-    else if (expecting_annotation_value)
+
+
+    if (is_char_letter(c) ||
+        c == '_')
     {
-        expecting_annotation_value = false;
+        result.kind  = TOKEN_KIND_identifier;
+        result.value = &stream->buffer[stream->index];
 
-        int value_len = 0, value_capacity = STRING_CHUNK_SIZE;
-        char *value = calloc(value_capacity, 1);
-
-        value[value_len++] = c;
-        while (fpeekc(f) != ')')
+        while (is_char_alphanumeric(c) ||
+               c == '_')
         {
-            c = fgetc(f);
-            value[value_len++] = c;
-
-            if (value_len > value_capacity)
-            {
-                value_capacity += STRING_CHUNK_SIZE;
-                value = realloc(value, value_capacity);
-            }
+            ++result.len;
+            consume_character(stream);
+            c = get_character(stream);
         }
-
-        result.type  = TOKEN_TYPE_value;
-        result.value = value;
     }
-    else if (expecting_integer)
+    else if (is_char_number(c))
     {
-        if (isdigit(c))
+        result.kind  = TOKEN_KIND_integer_literal;
+        result.value = &stream->buffer[stream->index];
+
+        while (is_char_number(c) ||
+               c == '.')
         {
-            expecting_integer = false;
-
-            int literal_len = 0, literal_capacity = STRING_CHUNK_SIZE;
-            char *literal = calloc(literal_capacity, 1);
-
-            literal[literal_len++] = c;
-            while (isdigit(fpeekc(f)))
+            if (c == '.')
             {
-                c = fgetc(f);
-                literal[literal_len++] = c;
-
-                if (literal_len > literal_capacity)
+                if (result.kind == TOKEN_KIND_integer_literal)
                 {
-                    literal_capacity += STRING_CHUNK_SIZE;
-                    literal = realloc(literal, literal_capacity);
+                    result.kind = TOKEN_KIND_float_literal;
+                }
+                else
+                {
+                    print_error_and_exit(stream, "float literal may contain only one '.'");
                 }
             }
 
-            result.type  = TOKEN_TYPE_integral_literal;
-            result.value = literal;
-        }
-        else
-        {
-            LCDDL_ERROR("Array size must be an integral literal");
+            ++result.len;
+            consume_character(stream);
+            c = get_character(stream);
         }
     }
-    else if (isalpha(c) ||
-             c == '_')
-    // NOTE(tbt): identifier can contain alphanumeric character and underscores
-    //            and must begin with a letter or an underscore, like C.
+    else if (c == '"')
     {
-        int identifier_len = 0, identifier_capacity = STRING_CHUNK_SIZE;
-        char *identifier = calloc(identifier_capacity, 1);
+        consume_character(stream);
+        c = get_character(stream);
 
-        identifier[identifier_len++] = c;
-        while (isalnum(fpeekc(f)) ||
-               fpeekc(f) == '_')
+        result.kind  = TOKEN_KIND_string_literal;
+        result.value = &stream->buffer[stream->index];
+
+        while (c != '"')
         {
-            c = fgetc(f);
-            identifier[identifier_len++] = c;
-
-            if (identifier_len > identifier_capacity)
-            {
-                identifier_capacity += STRING_CHUNK_SIZE;
-                identifier = realloc(identifier, identifier_capacity);
-            }
+            ++result.len;
+            consume_character(stream);
+            c = get_character(stream);
         }
 
-        // NOTE(tbt): determine whether it is a type or an identifier depending
-        //            on the previous token
-        if (expecting_type)
-        {
-            result.type    = TOKEN_TYPE_type;
-            expecting_type = false;
-        }
-        else
-        {
-            result.type = TOKEN_TYPE_name;
-        }
-        result.value = identifier;
-    }
-    else if (c == ':')
-    {
-        expecting_type = true;
-        result.type    = TOKEN_TYPE_colon;
+        consume_character(stream);
     }
     else if (c == '=')
     {
-        expecting_type  = false;
-        expecting_value = true;
-        result.type     = TOKEN_TYPE_equals;
+        result.kind  = TOKEN_KIND_equals;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '=')
+        {
+            result.kind = TOKEN_KIND_equality;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
-    else if (c == '{')
+    else if (c == '!')
     {
-        result.type = TOKEN_TYPE_open_curly_bracket;
+        result.kind = TOKEN_KIND_exclamation;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '=')
+        {
+            result.kind = TOKEN_KIND_not_equal_to;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
-    else if (c == '}')
+    else if (c == '<')
     {
-        result.type = TOKEN_TYPE_close_curly_bracket;
+        result.kind = TOKEN_KIND_lesser_than;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '=')
+        {
+            result.kind = TOKEN_KIND_lesser_than_or_equal_to;
+            result.len  = 2;
+            consume_character(stream);
+        }
+        else if (c == '<')
+        {
+            result.kind = TOKEN_KIND_bit_shift_right;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
-    else if (c == '[')
+    else if (c == '>')
     {
-        expecting_integer = true;
-        result.type       = TOKEN_TYPE_open_square_bracket;
+        result.kind = TOKEN_KIND_greater_than;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '=')
+        {
+            result.kind = TOKEN_KIND_greater_than_or_equal_to;
+            result.len  = 2;
+            consume_character(stream);
+        }
+        else if (c == '>')
+        {
+            result.kind = TOKEN_KIND_bit_shift_right;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
-    else if (c == ']')
+    else if (c == '&')
     {
-        expecting_integer = false;
-        result.type       = TOKEN_TYPE_close_square_bracket;
+        result.kind = TOKEN_KIND_bitwise_and;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '&')
+        {
+            result.kind = TOKEN_KIND_boolean_and;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
-    else if (c == '(')
+    else if (c == '|')
     {
-        expecting_annotation_value = true;
-        result.type                = TOKEN_TYPE_open_bracket;
-    }
-    else if (c == ')')
-    {
-        expecting_annotation_value = false;
-        result.type                = TOKEN_TYPE_close_bracket;
-    }
-    else if (c == '*')
-    {
-        result.type = TOKEN_TYPE_asterix;
-    }
-    else if (c == '@')
-    {
-        result.type = TOKEN_TYPE_at_symbol;
-    }
-    else if (c == ';')
-    {
-        result.type = TOKEN_TYPE_semicolon;
+        result.kind  = TOKEN_KIND_bitwise_or;
+        result.value = &stream->buffer[stream->index];
+        result.len   = 1;
+        consume_character(stream);
+
+        c = get_character(stream);
+        if (c == '|')
+        {
+            result.kind = TOKEN_KIND_boolean_or;
+            result.len  = 2;
+            consume_character(stream);
+        }
     }
     else if (c == EOF)
     {
-        result.type = TOKEN_TYPE_eof;
+        result.kind  = TOKEN_KIND_eof;
+        result.value = NULL;
+        result.len   = 0;
     }
     else
     {
-        LCDDL_ERRORF("Unexpected character '%c'", c);
+        switch(c)
+        {
+            case ':':
+            {
+                result.kind = TOKEN_KIND_colon;
+                break;
+            }
+            case '{':
+            {
+                result.kind = TOKEN_KIND_open_curly_bracket;
+                break;
+            }
+            case '}':
+            {
+                result.kind = TOKEN_KIND_close_curly_bracket;
+                break;
+            }
+            case '[':
+            {
+                result.kind = TOKEN_KIND_open_square_bracket;
+                break;
+            }
+            case ']':
+            {
+                result.kind = TOKEN_KIND_close_square_bracket;
+                break;
+            }
+            case '(':
+            {
+                result.kind = TOKEN_KIND_open_bracket;
+                break;
+            }
+            case ')':
+            {
+                result.kind = TOKEN_KIND_close_bracket;
+                break;
+            }
+            case '*':
+            {
+                result.kind = TOKEN_KIND_asterisk;
+                break;
+            }
+            case '-':
+            {
+                result.kind = TOKEN_KIND_dash;
+                break;
+            }
+            case '/':
+            {
+                result.kind = TOKEN_KIND_slash;
+                break;
+            }
+            case '+':
+            {
+                result.kind = TOKEN_KIND_add;
+                break;
+            }
+            case '~':
+            {
+                result.kind = TOKEN_KIND_tilde;
+                break;
+            }
+            case '@':
+            {
+                result.kind = TOKEN_KIND_at_symbol;
+                break;
+            }
+            case ';':
+            {
+                result.kind = TOKEN_KIND_semicolon;
+                break;
+            }
+            case '^':
+            {
+                result.kind = TOKEN_KIND_bitwise_xor;
+                break;
+            }
+            default:
+            {
+                print_error_and_exit_f(stream, "Unexpected character '%c'", c);
+            }
+        }
+
+        result.value    = &stream->buffer[stream->index];
+        result.len      = 1;
+        consume_character(stream);
     }
 
-#ifdef LCDDL_PRINT_TOKENS
-    fprintf(stderr, "%-32s -> %s\n", TOKEN_TYPE_TO_STRING(result.type), result.value);
-#endif
     return result;
 } 
 
 internal void
-eat(FILE *f,
-    int token_type)
+consume_token(Stream *stream,
+              TokenKind required_kind)
 {
-    if (global_current_token.type == token_type)
+    if (stream->current_token.kind == required_kind)
     {
-        global_current_token = get_next_token(f);
+        stream->current_token = get_next_token(stream);
     }
     else
     {
-        LCDDL_ERRORF("Expected %s, got %s",
-                     TOKEN_TYPE_TO_STRING(token_type),
-                     TOKEN_TYPE_TO_STRING(global_current_token.type));
+        print_error_and_exit_f(stream,
+                               "Expected '%s', got '%s'",
+                               token_kind_to_string(required_kind),
+                               token_kind_to_string(stream->current_token.kind));
     }
 }
 
-internal LcddlNode *statement(FILE *f);
-internal LcddlNode *statement_list(FILE *f);
-internal LcddlNode *declaration(FILE *f);
-internal LcddlNode *annotation(FILE *f);
+internal LcddlOperatorKind
+token_to_operator_kind(Token token,
+                       bool unary) // whether to use the unary or binary version if ambiguous
+{
+    switch (token.kind)
+    {
+        case TOKEN_KIND_tilde:
+        {
+            return LCDDL_UN_OP_KIND_bitwise_not;
+        }
+        case TOKEN_KIND_exclamation:
+        {
+            return LCDDL_UN_OP_KIND_boolean_not;
+        }
+        case TOKEN_KIND_add:
+        {
+            if (unary) { return LCDDL_UN_OP_KIND_positive; }
+            else       { return LCDDL_BIN_OP_KIND_add; }
+        }
+        case TOKEN_KIND_dash:
+        {
+            if (unary) { return LCDDL_UN_OP_KIND_negative; }
+            else       { return LCDDL_BIN_OP_KIND_subtract; }
+        }
+        case TOKEN_KIND_asterisk:
+        {
+            return LCDDL_BIN_OP_KIND_multiply;
+        }
+        case TOKEN_KIND_slash:
+        {
+            return LCDDL_BIN_OP_KIND_divide;
+        }
+        case TOKEN_KIND_lesser_than:
+        {
+            return LCDDL_BIN_OP_KIND_lesser_than;
+        }
+        case TOKEN_KIND_greater_than:
+        {
+            return LCDDL_BIN_OP_KIND_greater_than;
+        }
+        case TOKEN_KIND_lesser_than_or_equal_to:
+        {
+            return LCDDL_BIN_OP_KIND_lesser_than_or_equal_to;
+        }
+        case TOKEN_KIND_greater_than_or_equal_to:
+        {
+            return LCDDL_BIN_OP_KIND_greater_than_or_equal_to;
+        }
+        case TOKEN_KIND_equality:
+        {
+            return LCDDL_BIN_OP_KIND_equality;
+        }
+        case TOKEN_KIND_not_equal_to:
+        {
+            return LCDDL_BIN_OP_KIND_not_equal_to;
+        }
+        case TOKEN_KIND_bit_shift_left:
+        {
+            return LCDDL_BIN_OP_KIND_bit_shift_left;
+        }
+        case TOKEN_KIND_bit_shift_right:
+        {
+            return LCDDL_BIN_OP_KIND_bit_shift_right;
+        }
+        case TOKEN_KIND_bitwise_and:
+        {
+            return LCDDL_BIN_OP_KIND_bitwise_and;
+        }
+        case TOKEN_KIND_bitwise_or:
+        {
+            return LCDDL_BIN_OP_KIND_bitwise_or;
+        }
+        case TOKEN_KIND_bitwise_xor:
+        {
+            return LCDDL_BIN_OP_KIND_bitwise_xor;
+        }
+        case TOKEN_KIND_boolean_and:
+        {
+            return LCDDL_BIN_OP_KIND_boolean_and;
+        }
+        case TOKEN_KIND_boolean_or:
+        {
+            return LCDDL_BIN_OP_KIND_boolean_or;
+        }
+        default:
+        {
+            return -1;
+        }
+    }
+}
+
+internal bool
+is_token_usable_as_binary_operator(Token token)
+{
+    LcddlOperatorKind kind = token_to_operator_kind(token, false);
+    if (kind == -1                          ||
+        kind <= LCDDL_BINARY_OPERATOR_BEGIN ||
+        kind >= LCDDL_BINARY_OPERATOR_END)
+    {
+        return false;
+    }
+    return true;
+}
+
+internal bool
+is_token_usable_as_unary_operator(Token token)
+{
+    LcddlOperatorKind kind = token_to_operator_kind(token, true);
+    if (kind == -1                          ||
+        kind <= LCDDL_UNARY_OPERATOR_BEGIN ||
+        kind >= LCDDL_UNARY_OPERATOR_END)
+    {
+        return false;
+    }
+    return true;
+}
+
+///////////////////////////////////////////
+// PARSER
+//
+
+internal LcddlNode *parse_file(char *path);
+internal LcddlNode *parse_statement(Stream *stream);
+internal LcddlNode *parse_statement_list(Stream *stream);
+internal LcddlNode *parse_annotations(Stream *stream);
+internal LcddlNode *parse_declaration(Stream *stream);
+internal LcddlNode *parse_type(Stream *stream);
+internal LcddlNode *parse_binary_operator_rhs(Stream *stream, unsigned int expression_precedence, LcddlNode *lhs);
+internal LcddlNode *parse_expression(Stream *stream);
+internal LcddlNode *parse_parenthesis(Stream *lexer);
+internal LcddlNode *parse_primary(Stream *stream);
+internal LcddlNode *parse_unary_operator(Stream *stream);
+internal LcddlNode *parse_literal(Stream *stream);
+internal LcddlNode *parse_variable_reference(Stream *stream);
 
 internal LcddlNode *
-statement(FILE *f)
+parse_file(char *path)
 {
-    LcddlNode *result, *annotations = NULL;
+    Stream stream         = load_entire_file_as_stream(path);
 
-    if (global_current_token.type == TOKEN_TYPE_at_symbol)
-    {
-        annotations = annotation(f);
-    }
+    LcddlNode *result     = calloc(1, sizeof *result);
+    result->kind          = LCDDL_NODE_KIND_file;
+    result->file.filename = calloc(1, strlen(path) + 1);
+    strcpy(result->file.filename, path);
+    result->first_child   = parse_statement_list(&stream);
 
-    if (global_current_token.type == TOKEN_TYPE_open_curly_bracket)
+    return result;
+}
+
+internal LcddlNode *
+parse_statement(Stream *stream)
+{
+    LcddlNode *result      = NULL;
+    LcddlNode *annotations = parse_annotations(stream);
+
+    if (stream->current_token.kind == TOKEN_KIND_identifier)
     {
-        LCDDL_WARN("Usage of anonymous compound statements is discouraged");
-        eat(f, TOKEN_TYPE_open_curly_bracket);
-        result = statement_list(f);
-        eat(f, TOKEN_TYPE_close_curly_bracket);
-    }
-    else if (global_current_token.type == TOKEN_TYPE_name)
-    {
-        result = declaration(f);
-        eat(f, TOKEN_TYPE_semicolon);
+        result = parse_declaration(stream);
+        consume_token(stream, TOKEN_KIND_semicolon);
     }
     else
     {
-        LCDDL_ERRORF("Unexpected token '%s'",
-                     TOKEN_TYPE_TO_STRING(global_current_token.type));
+        print_error_and_exit(stream, "Expected a statement");
     }
 
     result->first_annotation = annotations;
@@ -366,208 +724,383 @@ statement(FILE *f)
 }
 
 internal LcddlNode *
-statement_list(FILE *f)
-{
-    LcddlNode *result = calloc(1, sizeof(*result));
-
-    while (global_current_token.type == TOKEN_TYPE_name               ||
-           global_current_token.type == TOKEN_TYPE_open_curly_bracket ||
-           global_current_token.type == TOKEN_TYPE_at_symbol)
-    // NOTE(tbt): statements can begin with an identifier, a curly bracket or an at sign.
-    {
-        LcddlNode *child    = statement(f);
-        child->next_sibling = result->first_child;
-        result->first_child = child;
-    }
-
-    if (global_current_token.type == TOKEN_TYPE_name)
-    {
-        LCDDL_ERRORF("Unexpected identifier '%s'",
-                     global_current_token.value);
-    }
-
-    return result;
-}
-
-internal LcddlNode *
-declaration(FILE *f)
-{
-    LcddlNode *result;
-
-    char *name = global_current_token.value;
-    eat(f, TOKEN_TYPE_name);
-    eat(f, TOKEN_TYPE_colon);
-
-    if (global_current_token.type == TOKEN_TYPE_colon)
-    // NOTE(tbt): double colon means compound declaration
-    {
-        eat(f, TOKEN_TYPE_colon);
-        char *type   = global_current_token.value;
-        eat(f, TOKEN_TYPE_type);
-        eat(f, TOKEN_TYPE_open_curly_bracket);
-
-        result       = statement_list(f);
-        result->type = type;
-        result->name = name;
-        eat(f, TOKEN_TYPE_close_curly_bracket);
-    }
-    else
-    {
-        result       = calloc(sizeof(*result), 1);
-        result->name = name;
-
-        if (global_current_token.type == TOKEN_TYPE_equals)
-        // NOTE(tbt): type has been ommited - go straight to value;
-        {
-            eat(f, TOKEN_TYPE_equals);
-            result->value = global_current_token.value;
-            eat(f, TOKEN_TYPE_value);
-        }
-        else
-        {
-            if (global_current_token.type == TOKEN_TYPE_open_square_bracket)
-            // NOTE(tbt): declaration is an array
-            {
-                eat(f, TOKEN_TYPE_open_square_bracket);
-                result->array_count = atoi(global_current_token.value);
-                eat(f, TOKEN_TYPE_integral_literal);
-                eat(f, TOKEN_TYPE_close_square_bracket);
-            }
-
-            result->type = global_current_token.value;
-            eat(f, TOKEN_TYPE_type);
-
-            while (global_current_token.type == TOKEN_TYPE_asterix)
-            {
-                eat(f, TOKEN_TYPE_asterix);
-                ++result->indirection_level;
-            }
-
-            if (global_current_token.type == TOKEN_TYPE_equals)
-            // NOTE(tbt): specifying a value is optional
-            {
-                eat(f, TOKEN_TYPE_equals);
-
-                result->value = global_current_token.value;
-                eat(f, TOKEN_TYPE_value);
-            }
-        }
-    }
-
-    return result;
-}
-
-internal LcddlNode *
-annotation(FILE *f)
+parse_statement_list(Stream *stream)
 {
     LcddlNode *result = NULL;
 
-    do
+    while (stream->current_token.kind == TOKEN_KIND_identifier ||
+           stream->current_token.kind == TOKEN_KIND_at_symbol)
     {
-        if (global_current_token.type == TOKEN_TYPE_semicolon)
+        LcddlNode *node = parse_statement(stream);
+        node->next_sibling = result;
+        result = node;
+    }
+
+    return result;
+}
+
+internal LcddlNode *
+parse_annotations(Stream *stream)
+{
+    LcddlNode *result = NULL;
+
+    while (stream->current_token.kind == TOKEN_KIND_at_symbol)
+    {
+        consume_token(stream, TOKEN_KIND_at_symbol);
+        LcddlNode *annotation      = calloc(1, sizeof *annotation);
+        annotation->kind           = LCDDL_NODE_KIND_annotation;
+        annotation->annotation.tag = calloc(1, stream->current_token.len + 1);
+        strncpy(annotation->annotation.tag,
+                stream->current_token.value,
+                stream->current_token.len);
+        consume_token(stream, TOKEN_KIND_identifier);
+
+        if (stream->current_token.kind == TOKEN_KIND_equals)
         {
-            eat(f, TOKEN_TYPE_semicolon);
-        }
-
-        eat(f, TOKEN_TYPE_at_symbol);
-
-        LcddlNode *annotation = calloc(sizeof(*annotation), 1);
-        annotation->name = global_current_token.value;
-        eat(f, TOKEN_TYPE_name);
-
-        if (global_current_token.type == TOKEN_TYPE_open_bracket)
-        {
-            eat(f, TOKEN_TYPE_open_bracket);
-            annotation->value = global_current_token.value;
-            eat(f, TOKEN_TYPE_value);
-            eat(f, TOKEN_TYPE_close_bracket);
+            consume_token(stream, TOKEN_KIND_equals);
+            annotation->annotation.value = parse_expression(stream);
         }
 
         annotation->next_annotation = result;
         result = annotation;
-    } while (global_current_token.type == TOKEN_TYPE_semicolon);
+    }
 
     return result;
 }
 
-typedef void (*UserInitCallback)(void);
-typedef void (*UserTopLevelCallback)(char *, LcddlNode *);
-typedef void (*UserCleanupCallback)(void);
-
-typedef struct
+internal LcddlNode *
+parse_declaration(Stream *stream)
 {
-    UserInitCallback user_init_callback;
-    UserTopLevelCallback user_top_level_callback;
-    UserCleanupCallback user_cleanup_callback;
-} UserCallbacks;
+    LcddlNode *result        = calloc(1, sizeof *result);
+    result->kind             = LCDDL_NODE_KIND_declaration;
+    result->declaration.name = calloc(1, stream->current_token.len + 1);
+    strncpy(result->declaration.name,
+            stream->current_token.value,
+            stream->current_token.len);
 
-internal UserCallbacks get_user_callback_functions(char *lib_path);
+    consume_token(stream, TOKEN_KIND_identifier);
+    consume_token(stream, TOKEN_KIND_colon);
+
+    if (stream->current_token.kind == TOKEN_KIND_colon)
+    // NOTE(tbt): double colon means compound declaration
+    {
+        consume_token(stream, TOKEN_KIND_colon);
+        result->declaration.type = parse_type(stream);
+        consume_token(stream, TOKEN_KIND_open_curly_bracket);
+        result->first_child      = parse_statement_list(stream);
+        consume_token(stream, TOKEN_KIND_close_curly_bracket);
+    }
+    else
+    {
+        if (stream->current_token.kind == TOKEN_KIND_equals)
+        // NOTE(tbt): type has been ommited - go straight to value;
+        {
+            consume_token(stream, TOKEN_KIND_equals);
+            result->declaration.value = parse_expression(stream);
+        }
+        else
+        {
+            result->declaration.type = parse_type(stream);
+            if (stream->current_token.kind == TOKEN_KIND_equals)
+            {
+                consume_token(stream, TOKEN_KIND_equals);
+                result->declaration.value = parse_expression(stream);
+            }
+        }
+    }
+
+    return result;
+}
+
+internal LcddlNode *
+parse_type(Stream *stream)
+{
+    LcddlNode *result = calloc(1, sizeof *result);
+    result->kind      = LCDDL_NODE_KIND_type;
+
+    if (stream->current_token.kind == TOKEN_KIND_open_square_bracket)
+    {
+        consume_token(stream, TOKEN_KIND_open_square_bracket);
+        char *array_count_str = calloc(1, stream->current_token.len + 1);
+        strncpy(array_count_str,
+                stream->current_token.value,
+                stream->current_token.len);
+        consume_token(stream, TOKEN_KIND_integer_literal);
+
+        result->type.array_count = strtoul(array_count_str, NULL, 10);
+
+        consume_token(stream, TOKEN_KIND_close_square_bracket);
+    }
+
+    result->type.type_name = calloc(1, stream->current_token.len + 1);
+    strncpy(result->type.type_name,
+            stream->current_token.value,
+            stream->current_token.len);
+    consume_token(stream, TOKEN_KIND_identifier);
+
+    while (stream->current_token.kind == TOKEN_KIND_asterisk)
+    {
+        consume_token(stream, TOKEN_KIND_asterisk);
+        result->type.indirection_level += 1; }
+
+    return result;
+}
+
+internal LcddlNode *
+parse_binary_operator_rhs(Stream *stream,
+                          unsigned int expression_precedence,
+                          LcddlNode *lhs)
+{
+    static unsigned int precedence_table[1 << 8] = 
+    {
+        [LCDDL_BIN_OP_KIND_multiply]                 = 10,
+        [LCDDL_BIN_OP_KIND_divide]                   = 10,
+        [LCDDL_BIN_OP_KIND_add]                      = 9,
+        [LCDDL_BIN_OP_KIND_subtract]                 = 9,
+        [LCDDL_BIN_OP_KIND_bit_shift_left]           = 8,
+        [LCDDL_BIN_OP_KIND_bit_shift_right]          = 8,
+        [LCDDL_BIN_OP_KIND_lesser_than]              = 7,
+        [LCDDL_BIN_OP_KIND_lesser_than_or_equal_to]  = 7,
+        [LCDDL_BIN_OP_KIND_greater_than]             = 7,
+        [LCDDL_BIN_OP_KIND_greater_than_or_equal_to] = 7,
+        [LCDDL_BIN_OP_KIND_equality]                 = 6,
+        [LCDDL_BIN_OP_KIND_not_equal_to]             = 6,
+        [LCDDL_BIN_OP_KIND_bitwise_and]              = 5,
+        [LCDDL_BIN_OP_KIND_bitwise_xor]              = 4,
+        [LCDDL_BIN_OP_KIND_bitwise_or]               = 3,
+        [LCDDL_BIN_OP_KIND_boolean_and]              = 2,
+        [LCDDL_BIN_OP_KIND_boolean_or]               = 1,
+    };
+
+    for (;;)
+    {
+        LcddlOperatorKind operator_kind;
+        unsigned int token_precedence;
+
+        if (is_token_usable_as_binary_operator(stream->current_token))
+        {
+            operator_kind    = token_to_operator_kind(stream->current_token, false);
+            token_precedence = precedence_table[operator_kind];
+
+            if (token_precedence < expression_precedence)
+            {
+                return lhs;
+            }
+        }
+        else
+        {
+            return lhs;
+        }
+
+        consume_token(stream, stream->current_token.kind);
+
+        LcddlNode *rhs = parse_primary(stream);
+
+        if (is_token_usable_as_binary_operator(stream->current_token))
+        {
+            unsigned int next_precedence = precedence_table[token_to_operator_kind(stream->current_token, false)];
+            if (token_precedence < next_precedence)
+            {
+                rhs = parse_binary_operator_rhs(stream, token_precedence + 1, rhs);
+            }
+        }
+
+        LcddlNode *new_left            = calloc(1, sizeof *new_left);
+        new_left->kind                 = LCDDL_NODE_KIND_binary_operator;
+        new_left->binary_operator.kind  = operator_kind;
+        new_left->binary_operator.left  = lhs;
+        new_left->binary_operator.right = rhs;
+
+        lhs = new_left;
+    }
+}
+
+internal LcddlNode *
+parse_expression(Stream *stream)
+{
+    LcddlNode *lhs = parse_primary(stream);
+    return parse_binary_operator_rhs(stream, 0, lhs);
+}
+
+internal LcddlNode *
+parse_parenthesis(Stream *stream)
+{
+    consume_token(stream, TOKEN_KIND_open_bracket);  // eat '('
+    LcddlNode *result = parse_expression(stream);
+    consume_token(stream, TOKEN_KIND_close_bracket); // eat ')'
+
+    return result;
+}
+
+internal LcddlNode *
+parse_primary(Stream *stream)
+{
+    switch (stream->current_token.kind)
+    {
+        case TOKEN_KIND_add:         // unary plus operator
+        case TOKEN_KIND_dash:        // unary negative operator
+        case TOKEN_KIND_tilde:       // bitwise not operator
+        case TOKEN_KIND_exclamation: // boolean not operator
+        {
+            return parse_unary_operator(stream);
+        }
+        case TOKEN_KIND_float_literal:
+        case TOKEN_KIND_integer_literal:
+        case TOKEN_KIND_string_literal:
+        {
+            return parse_literal(stream);
+        }
+        case TOKEN_KIND_identifier:
+        {
+            return parse_variable_reference(stream);
+        }
+        case TOKEN_KIND_open_bracket:
+        {
+            return parse_parenthesis(stream);
+        }
+        default:
+        {
+            print_error_and_exit_f(stream,
+                                   "Got unexpected token '%s' when expecting an expression",
+                                   token_kind_to_string(stream->current_token.kind));
+            return NULL;
+        }
+    }
+}
+
+internal LcddlNode *
+parse_unary_operator(Stream *stream)
+{
+    LcddlNode *result = calloc(1, sizeof *result);
+    result->kind      = LCDDL_NODE_KIND_unary_operator;
+
+    if (is_token_usable_as_unary_operator(stream->current_token))
+    {
+        result->unary_operator.kind = token_to_operator_kind(stream->current_token, true);
+        consume_token(stream, stream->current_token.kind);
+    }
+    else
+    {
+        print_error_and_exit_f(stream,
+                               "expected a unary operator, instead got '%s'",
+                               token_kind_to_string(stream->current_token.kind));
+    }
+    result->unary_operator.operand = parse_expression(stream);
+
+    return result;
+}
+
+internal LcddlNode *
+parse_literal(Stream *stream)
+{
+    LcddlNode *result        = calloc(1, sizeof *result);
+    result->literal.value = calloc(1, stream->current_token.len + 1);
+    strncpy(result->literal.value,
+            stream->current_token.value,
+            stream->current_token.len);
+
+    switch (stream->current_token.kind)
+    {
+        case TOKEN_KIND_string_literal:
+        {
+            result->kind = LCDDL_NODE_KIND_string_literal;
+            consume_token(stream, TOKEN_KIND_string_literal);
+            break;
+        }
+        case TOKEN_KIND_integer_literal:
+        {
+            result->kind = LCDDL_NODE_KIND_integer_literal;
+            consume_token(stream, TOKEN_KIND_integer_literal);
+            break;
+        }
+        case TOKEN_KIND_float_literal:
+        {
+            result->kind = LCDDL_NODE_KIND_float_literal;
+            consume_token(stream, TOKEN_KIND_float_literal);
+            break;
+        }
+        default:
+        {
+            print_error_and_exit_f(stream,
+                                   "Expecting a literal, got '%s'",
+                                   token_kind_to_string(stream->current_token.kind));
+        }
+    }
+
+    return result;
+}
+
+internal LcddlNode *
+parse_variable_reference(Stream *stream)
+{
+    LcddlNode *result          = calloc(1, sizeof *result);
+    result->kind               = LCDDL_NODE_KIND_variable_reference;
+    result->var_reference.name = calloc(1, stream->current_token.len + 1);
+    strncpy(result->var_reference.name,
+            stream->current_token.value,
+            stream->current_token.len);
+
+    consume_token(stream, TOKEN_KIND_identifier);
+
+    return result;
+}
+
+///////////////////////////////////////////
+// USER LAYER
+//
+
+typedef void (*UserCallback)(LcddlNode *);
+
+internal UserCallback get_user_callback_functions(char *lib_path);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-internal UserCallbacks
+internal UserCallback
 get_user_callback_functions(char *lib_path)
 {
-    UserCallbacks result;
+    UserCallback result = NULL;
 
     HINSTANCE library = LoadLibrary(lib_path);
     if (!library)
     {
-        LCDDL_ERRORF("Could not open custom layer library '%s'", lib_path);
+        fprintf(stderr, "ERROR: Could not open custom layer library '%s'\n", lib_path);
+        exit(EXIT_FAILURE);
     }
 
-    result.user_init_callback      = (UserInitCallback)GetProcAddress(library, "lcddl_user_init_callback");
-    result.user_top_level_callback = (UserTopLevelCallback)GetProcAddress(library, "lcddl_user_top_level_callback");
-    result.user_cleanup_callback   = (UserCleanupCallback)GetProcAddress(library, "lcddl_user_cleanup_callback");
+    result = (UserCallback)GetProcAddress(library, "lcddl_user_callback");
 
-    if (!result.user_init_callback      ||
-        !result.user_top_level_callback ||
-        !result.user_cleanup_callback)
+    if (!result)
     {
-        LCDDL_ERRORF("Could not find all required callbacks in custom layer library '%s'", lib_path);
+        fprintf(stderr, "ERROR: Could not find callback in user layer library '%s'\n", lib_path);
+        exit(EXIT_FAILURE);
     }
 
     return result;
 }
 #else
-internal UserCallbacks
+internal UserCallback
 get_user_callback_functions(char *lib_path)
 {
-    UserCallbacks result;
+    UserCallback result;
 
     void *library = dlopen(lib_path, RTLD_NOW | RTLD_GLOBAL);
     if (!library)
     {
-        LCDDL_ERRORF("Could not open user layer library '%s'", lib_path);
+        fprintf(stderr, "ERROR: Could not open user layer library '%s'\n", lib_path);
+        exit(EXIT_FAILURE);
     }
 
-    result.user_init_callback      = dlsym(library, "lcddl_user_init_callback");
-    result.user_top_level_callback = dlsym(library, "lcddl_user_top_level_callback");
-    result.user_cleanup_callback   = dlsym(library, "lcddl_user_cleanup_callback");
+    result = dlsym(library, "lcddl_user_callback");
 
-    if (!result.user_init_callback      ||
-        !result.user_top_level_callback ||
-        !result.user_cleanup_callback)
+    if (!result)
     {
-        LCDDL_ERRORF("Could not find all required callbacks in user layer library '%s'", lib_path);
+        fprintf(stderr, "ERROR: Could not find callback in user layer library '%s'\n", lib_path);
+        exit(EXIT_FAILURE);
     }
 
     return result;
 }
 #endif
 
-internal LcddlNode *
-parse_file(char *path)
-{
-    FILE *f = fopen(path, "r");
-
-    global_current_line  = 1;
-    global_current_token = get_next_token(f);
-    strncpy(global_current_file, path, PATH_MAX_LEN);
-    LcddlNode *result    = statement_list(f);
-
-    fclose(f);
-    return result;
-}
 
 int
 main(int argc,
@@ -579,25 +1112,21 @@ main(int argc,
         return EXIT_FAILURE;
     }
 
-    UserCallbacks callbacks = get_user_callback_functions(argv[1]);
 
-    callbacks.user_init_callback();
+    UserCallback user_callback = get_user_callback_functions(argv[1]);
 
+    LcddlNode *root = calloc(1, sizeof *root);
+    root->kind      = LCDDL_NODE_KIND_root;
     for (int i = 2;
          i < argc;
          ++i)
     {
-        LcddlNode *root = parse_file(argv[i]);
-
-        for (LcddlNode *node = root->first_child;
-             NULL != node;
-             node = node->next_sibling)
-        {
-            callbacks.user_top_level_callback(argv[i], node);
-        }
+        LcddlNode *file    = parse_file(argv[i]);
+        file->next_sibling = root->first_child;
+        root->first_child  = file;
     }
 
-    callbacks.user_cleanup_callback();
+    user_callback(root);
 
     return EXIT_SUCCESS;
 }
