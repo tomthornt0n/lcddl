@@ -69,39 +69,50 @@ lcddl_user_callback(LcddlNode *root)
 ---
 
 ### The LCD file format:
-Each input file consists of a set of declarations
+
+Each input file consists of a set of declarations.
+See `example.lcd` for an example.
+Bellow, anything surrounded by `< >` denotes it may be ommited
+
 #### Declarations:
 Declarations come in two forms:
 ```
-identifier : type = expression;
+identifier : <type> <= expression>;
 ```
 * In a normal declaration the type or the value may be ommited (but not both).
 
 ```
 identifier :: type
 {
-    [declarations]
+    child_declarations
 }
+* Compound declarations have 2 colons, and no value may be specified.
+* They are followed by a curly bracket block containing child declarations.
 ```
-* No value may be specified
-* The type must not be ommited
+
+Any declaration may be prefixed by a series of [tags](https://github.com/tomthornt0n/lcddl#tags).
+
+#### Identifiers
+An identifier is defined as a sequence of alphanumeric characters beginning with a letter or an underscore.
+
+#### Types
+A type is defined as an identifier, optionally prefixed by `[integer literal]` where the integer literal corresponds to the size of the array, and optionally suffixed by n`*`, where the number of `*`s correspond to the indirection level. Both the array count and the indirection level default to 0 if ommited.
 
 #### Expressions:
 An expression is defined as:
 ```
-primary_expression [binary_operator expression]
+primary_expression <binary_operator expression>
 ```
 Primary expressions are any literal or an identifier, optionally preceded by a unary operator.
 
-##### Operators:
-Unary operators:
+#### Unary operators
 ```
 LCDDL_UN_OP_KIND_positive                   '+'
 LCDDL_UN_OP_KIND_negative                   '-'
 LCDDL_UN_OP_KIND_bitwise_not                '~'
 LCDDL_UN_OP_KIND_boolean_not                '!'
 ```
-Binary operators:
+#### Binary operators
 ```
 LCDDL_BIN_OP_KIND_multiply                   '*'
 LCDDL_BIN_OP_KIND_divide                     '/'
@@ -143,13 +154,17 @@ LCDDL_BIN_OP_KIND_boolean_and                     2
 LCDDL_BIN_OP_KIND_boolean_or                      1
 ```
 
-### Literals
+#### Tags
+Tags are used to providea additional metadata about the structure to the user layer.
+A tag is in the form:
+```
+@identifier <= expression>
+```
+
+#### Literals
 * an integer literal is defined as a sequence of digits.
 * a float literal is defined as a sequence of digits containing exactly 1 '.'.
 * a string literal is defined as a sequence of any characters enclosed in '"'.
-
-#### Identifiers
-An identifier is defined as a sequence of alphanumeric characters beginning with a letter or and underscore.
 
 ---
 
