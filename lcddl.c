@@ -1359,6 +1359,7 @@ lcddl_write_node_to_file_as_c_enum(LcddlNode *node,
 LcddlSearchResult *
 lcddl_find_top_level_declaration(char *name)
 {
+ fprintf(stderr, "looking for top level decl '%s'\n", name);
  LcddlSearchResult *result = NULL;
  
  for (LcddlNode *file = _lcddl_global_root->first_child;
@@ -1374,6 +1375,7 @@ lcddl_find_top_level_declaration(char *name)
    {
     LcddlSearchResult *search_node = calloc(1, sizeof(*search_node));
     search_node->next = result;
+    result = search_node;
     search_node->node = node;
    }
   }
@@ -1400,6 +1402,7 @@ lcddl_find_all_top_level_declarations_with_tag(char *tag)
    {
     LcddlSearchResult *search_node = calloc(1, sizeof(*search_node));
     search_node->next = result;
+    result = search_node;
     search_node->node = node;
    }
   }
