@@ -806,7 +806,7 @@ _lcddl_parse_declaration(_LcddlStream *stream)
    }
   }
   
-  if (steam->current_token.kind != TOKEN_KIND_semicolon)
+  if (stream->current_token.kind != TOKEN_KIND_semicolon)
   {
    _lcddl_consume_token(stream, TOKEN_KIND_open_curly_bracket);
    result->first_child      = _lcddl_parse_statement_list(stream);
@@ -1128,7 +1128,7 @@ main(int argc,
  }
  
  _LcddlUserCallback user_callback = get_user_callback_functions(argv[1]);
- _lcddl_global_root               = calloc(1, sizeof *root);
+ _lcddl_global_root               = calloc(1, sizeof *_lcddl_global_root);
  _lcddl_global_root->kind         = LCDDL_NODE_KIND_root;
  
  for (int i = 2;
