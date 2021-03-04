@@ -7,8 +7,23 @@ It parses a simple format which describes a series of declarations into a corres
 LCDDL was recently rewritten.
 The old version is available on the `legacy` branch.
 
+---
+
 ## Documentation:
-### Building LCDDL:
+### Using LCDDL:
+There are two ways to use LCDDL - as an executable which calls into a custom layer, or as a library.
+The instruction bellow detail how to build and use LCDDL as an executable.
+Alternatively, it may be used as a library.
+If you are doing a 'unity' (single translation unit) build, it is as simple as:
+```
+#define LCCDL_AS_LIBRARY
+#include "lcddl.c"
+```
+For traditional builds, compile `lcddl.c` alongside the rest of your project and include `lcddl.h` wherever it is required, ensuring `LCDDL_AS_LIBRARY` is defined when both are compiled, ideally by using a compiler flag, e.g. `cl <source files here> /DLCDDL_AS_LIBRARY`
+
+---
+
+### Building LCDDL as an executable:
 #### On Windows:
 > To build LCDDL on windows, `cl` must be in your path. The easiest way to achieve this is by using a visual studio developer command prompt. This can be found by searching for `x64 Native Tools Command Prompt for VS****` in the start menu.
 * First build LCDDL itself: `.\windows_build.bat`
@@ -20,6 +35,22 @@ The old version is available on the `legacy` branch.
 
 ### Running LCDDL:
 LCDDL can be run with `./lcddl (path to shared library) (input file 1) (input file 2) ...`
+
+---
+
+### Using LCDDL as a library:
+
+```
+void lcddl_initialise(void);
+```
+Call this before using any other LCDDL APIs.
+
+```
+LcddlNode *lcddl_parse_file(char *filename);
+```
+Parses the file specified by `filename` and returns a pointer to the corresponding `LcddlNode`
+
+---
 
 ### Writing a user layer:
 The user layer must implement the function:
@@ -34,7 +65,10 @@ lcddl_user_callback(LcddlNode *root)
 * each child of `root` represents a file passed to LCDDL as input.
 * each child of the file represents a declaration within the file.
 * see `lcddl.h` for more information about `LcddlNode`
-### Writing input files:
+
+---
+
+### The LCD file format:
 Each input file consists of a set of declarations
 #### Declarations:
 Declarations come in two forms:
@@ -59,34 +93,35 @@ primary_expression [binary_operator expression]
 ```
 Primary expressions are any literal or an identifier, optionally preceded by a unary operator.
 
-#### Operators:
+##### Operators:
 Unary operators:
 ```
-LCDDL_UN_OP_KIND_positive,                  // '+'
-LCDDL_UN_OP_KIND_negative,                  // '-'
-LCDDL_UN_OP_KIND_bitwise_not,               // '~'
-LCDDL_UN_OP_KIND_boolean_not,               // '!'
+LCDDL_UN_OP_KIND_positive                   '+'
+LCDDL_UN_OP_KIND_negative                   '-'
+LCDDL_UN_OP_KIND_bitwise_not                '~'
+LCDDL_UN_OP_KIND_boolean_not                '!'
 ```
 Binary operators:
 ```
-LCDDL_BIN_OP_KIND_multiply,                 // '*'
-LCDDL_BIN_OP_KIND_divide,                   // '/'
-LCDDL_BIN_OP_KIND_add,                      // '+'
-LCDDL_BIN_OP_KIND_subtract,                 // '-'
-LCDDL_BIN_OP_KIND_bit_shift_left,           // '<<'
-LCDDL_BIN_OP_KIND_bit_shift_right,          // '>>'
-LCDDL_BIN_OP_KIND_lesser_than,              // '<'
-LCDDL_BIN_OP_KIND_greater_than,             // '>'
-LCDDL_BIN_OP_KIND_lesser_than_or_equal_to,  // '<='
-LCDDL_BIN_OP_KIND_greater_than_or_equal_to, // '>='
-LCDDL_BIN_OP_KIND_equality,                 // '=='
-LCDDL_BIN_OP_KIND_not_equal_to,             // '!='
-LCDDL_BIN_OP_KIND_bitwise_and,              // '&'
-LCDDL_BIN_OP_KIND_bitwise_xor,              // '^'
-LCDDL_BIN_OP_KIND_bitwise_or,               // '|'
-LCDDL_BIN_OP_KIND_boolean_and,              // '&&'
-LCDDL_BIN_OP_KIND_boolean_or,               // '||'
+LCDDL_BIN_OP_KIND_multiply                   '*'
+LCDDL_BIN_OP_KIND_divide                     '/'
+LCDDL_BIN_OP_KIND_add                        '+'
+LCDDL_BIN_OP_KIND_subtract                   '-'
+LCDDL_BIN_OP_KIND_bit_shift_left             '<<'
+LCDDL_BIN_OP_KIND_bit_shift_right            '>>'
+LCDDL_BIN_OP_KIND_lesser_than                '<'
+LCDDL_BIN_OP_KIND_greater_than               '>'
+LCDDL_BIN_OP_KIND_lesser_than_or_equal_to    '<='
+LCDDL_BIN_OP_KIND_greater_than_or_equal_to   '>='
+LCDDL_BIN_OP_KIND_equality                   '=='
+LCDDL_BIN_OP_KIND_not_equal_to               '!='
+LCDDL_BIN_OP_KIND_bitwise_and                '&'
+LCDDL_BIN_OP_KIND_bitwise_xor                '^'
+LCDDL_BIN_OP_KIND_bitwise_or                 '|'
+LCDDL_BIN_OP_KIND_boolean_and                '&&'
+LCDDL_BIN_OP_KIND_boolean_or                 '||'
 ```
+
 Binary operators have the following precedence:
 ```
 LCDDL_BIN_OP_KIND_multiply                        10
@@ -108,7 +143,7 @@ LCDDL_BIN_OP_KIND_boolean_and                     2
 LCDDL_BIN_OP_KIND_boolean_or                      1
 ```
 
-### literals
+### Literals
 * an integer literal is defined as a sequence of digits.
 * a float literal is defined as a sequence of digits containing exactly 1 '.'.
 * a string literal is defined as a sequence of any characters enclosed in '"'.
@@ -116,3 +151,8 @@ LCDDL_BIN_OP_KIND_boolean_or                      1
 #### Identifiers
 An identifier is defined as a sequence of alphanumeric characters beginning with a letter or and underscore.
 
+---
+
+### User Layer Helpers
+LCDDL provides a set of helper functions to assist writing a custom layer.
+These are still a work in progress and will be documented soon.

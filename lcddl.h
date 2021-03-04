@@ -1,7 +1,7 @@
 #ifndef LCDDL_H
 #define LCDDL_H
 
-#define internal static
+#include <stdbool.h>
 
 typedef enum
 {
@@ -137,6 +137,8 @@ struct LcddlNode
  };
 };
 
+#ifndef LCDDL_AS_LIBRARY
+
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define LCDDL_CALLBACK __declspec(dllexport)
 #else
@@ -144,6 +146,13 @@ struct LcddlNode
 #endif
 
 LCDDL_CALLBACK void lcddl_user_callback(LcddlNode *root);
+
+#else
+
+void lcddl_initialise(void);
+LcddlNode *lcddl_parse_file(char *filename);
+
+#endif
 
 void lcddl_write_node_to_file_as_c_struct(LcddlNode *node, FILE *file);
 void lcddl_write_node_to_file_as_c_enum(LcddlNode *node, FILE *file);
