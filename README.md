@@ -1,8 +1,7 @@
 # LCDDL
 
-LCDDL is a small utility to allow for compile time type introspection in languages such as C.
-
-It parses a simple format which describes a series of declarations into a corresponding AST, which it then passes to a custom user layer, where this data can be used for whatever your project requires.
+LCDDL is a structured text format and accompanying C library to parse it, originally designed with the intention of being used to facilitate metaprogramming and compile-time type introspection in C.
+The format is designed such that it can be aesthetically similar to C declarations, however it can be used to encode any kind of data.
 
 LCDDL was recently rewritten.
 The old version is available on the `legacy` branch.
@@ -58,7 +57,7 @@ The user layer must implement the function:
 LCDDL_CALLBACK void
 lcddl_user_callback(LcddlNode *root)
 {
-    // do something here
+ // do something here
 }
 ```
 * `root` is the root of a tree composed entirely of `LcddlNode`s.
@@ -75,23 +74,12 @@ See `example.lcd` for an example.
 Bellow, anything surrounded by `< >` denotes it may be ommited
 
 #### Declarations:
-Declarations come in two forms:
+A declaration is defined as
 ```
-identifier : <type> <= expression>;
+identifier <: <type> <= expression>> < { delcarations }>;
 ```
-* In a normal declaration the type or the value may be ommited (but not both).
-
-```
-identifier :: type
-{
-    child_declarations
-}
-* Compound declarations have 2 colons, and no value may be specified.
-* They are followed by a curly bracket block containing child declarations.
-```
-
 Any declaration may be prefixed by a series of [tags](https://github.com/tomthornt0n/lcddl#tags).
-
+                                                      
 #### Identifiers
 An identifier is defined as a sequence of alphanumeric characters beginning with a letter or an underscore.
 
@@ -112,6 +100,7 @@ LCDDL_UN_OP_KIND_negative                   '-'
 LCDDL_UN_OP_KIND_bitwise_not                '~'
 LCDDL_UN_OP_KIND_boolean_not                '!'
 ```
+
 #### Binary operators
 ```
 LCDDL_BIN_OP_KIND_multiply                   '*'
@@ -171,3 +160,4 @@ A tag is in the form:
 ### User Layer Helpers
 LCDDL provides a set of helper functions to assist writing a custom layer.
 These are still a work in progress and will be documented soon.
+

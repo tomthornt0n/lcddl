@@ -4,12 +4,12 @@ _bar2 : f64 = 912.872;
 my_float := 1 / (4 + 19.8);
 my_unsigned_int : u64;
 
-example_1 :: struct
+example_1 : struct
 {
     example_2 : string = "hello, world!";
 
     @tag_1 @tag_2="this is an annotation value"
-    example_3 :: union
+    example_3 : union
     {
         example_4 : [8]i8;
         example_5 : u32*;

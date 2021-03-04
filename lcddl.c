@@ -785,19 +785,10 @@ _lcddl_parse_declaration(_LcddlStream *stream)
  
  if (stream->current_token.kind != TOKEN_KIND_semicolon)
  {
-  _lcddl_consume_token(stream, TOKEN_KIND_colon);
-  
   if (stream->current_token.kind == TOKEN_KIND_colon)
-   // NOTE(tbt): double colon means compound declaration
   {
    _lcddl_consume_token(stream, TOKEN_KIND_colon);
-   result->declaration.type = _lcddl_parse_type(stream);
-   _lcddl_consume_token(stream, TOKEN_KIND_open_curly_bracket);
-   result->first_child      = _lcddl_parse_statement_list(stream);
-   _lcddl_consume_token(stream, TOKEN_KIND_close_curly_bracket);
-  }
-  else
-  {
+   
    if (stream->current_token.kind == TOKEN_KIND_equals)
     // NOTE(tbt): type has been ommited - go straight to value;
    {
@@ -813,6 +804,13 @@ _lcddl_parse_declaration(_LcddlStream *stream)
      result->declaration.value = _lcddl_parse_expression(stream);
     }
    }
+  }
+  
+  if (steam->current_token.kind != TOKEN_KIND_semicolon)
+  {
+   _lcddl_consume_token(stream, TOKEN_KIND_open_curly_bracket);
+   result->first_child      = _lcddl_parse_statement_list(stream);
+   _lcddl_consume_token(stream, TOKEN_KIND_close_curly_bracket);
   }
  }
  
