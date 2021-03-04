@@ -693,14 +693,12 @@ static LcddlNode *_lcddl_parse_literal(_LcddlStream *stream);
 static LcddlNode *_lcddl_parse_variable_reference(_LcddlStream *stream);
 
 static LcddlNode *
-_lcddl_parse_file(char *path)
+_lcddl_parse_stream(_LcddlStream stream)
 {
- _LcddlStream stream         = _lcddl_load_entire_file_as_stream(path);
- 
  LcddlNode *result     = calloc(1, sizeof *result);
  result->kind          = LCDDL_NODE_KIND_file;
- result->file.filename = calloc(1, strlen(path) + 1);
- strcpy(result->file.filename, path);
+ result->file.filename = calloc(1, strlen(stream.path) + 1);
+ strcpy(result->file.filename, stream.path);
  result->first_child   = _lcddl_parse_statement_list(&stream);
  
  return result;
@@ -1135,7 +1133,7 @@ main(int argc,
       i < argc;
       ++i)
  {
-  LcddlNode *file                 = _lcddl_parse_file(argv[i]);
+  LcddlNode *file                 = _lcddl_parse_stream(_lcddl_load_entire_file_as_stream(argv[i]));
   file->next_sibling              = _lcddl_global_root->first_child;
   _lcddl_global_root->first_child = file;
  }
@@ -1157,11 +1155,34 @@ lcddl_initialise(void)
 LcddlNode *
 lcddl_parse_file(char *filename)
 {
- LcddlNode *file                  = _lcddl_parse_file(filename);
+ LcddlNode *file                  = _lcddl_parse_stream(_lcddl_load_entire_file_as_stream(filename));
  file->next_sibling               = _lcddl_global_root->first_child;
  _lcddl_global_root->first_child  = file;
  
  return file;
+}
+
+LcddlNode *
+lcddl_parse_from_memory(char *buffer,
+                        unsigned long long buffer_size)
+{
+ _LcddlStream stream              = {0};
+ stream.buffer                    = buffer;
+ stream.size                      = buffer_size;
+ stream.path                      = "memory";
+ stream.current_line              = 1;
+ stream.current_token             = _lcddl_get_next_token(&stream);
+ LcddlNode *file                  = _lcddl_parse_stream(stream);
+ file->next_sibling               = _lcddl_global_root->first_child;
+ _lcddl_global_root->first_child  = file;
+ 
+ return file;
+}
+
+LcddlNode *
+lcddl_parse_cstring(char *string)
+{
+ return lcddl_parse_from_memory(string, strlen(string));
 }
 
 #endif
@@ -1335,9 +1356,11 @@ lcddl_write_node_to_file_as_c_enum(LcddlNode *node,
  }
 }
 
-LcddlNode *
+LcddlSearchResult *
 lcddl_find_top_level_declaration(char *name)
 {
+ LcddlSearchResult *result = NULL;
+ 
  for (LcddlNode *file = _lcddl_global_root->first_child;
       NULL != file;
       file = file->next_sibling)
@@ -1349,12 +1372,180 @@ lcddl_find_top_level_declaration(char *name)
    if (node->kind == LCDDL_NODE_KIND_declaration &&
        0 == strcmp(node->declaration.name, name))
    {
-    return node;
+    LcddlSearchResult *search_node = calloc(1, sizeof(*search_node));
+    search_node->next = result;
+    search_node->node = node;
    }
   }
  }
  
- return NULL;
+ return result;
+}
+
+LcddlSearchResult *
+lcddl_find_all_top_level_declarations_with_tag(char *tag)
+{
+ LcddlSearchResult *result = NULL;
+ 
+ for (LcddlNode *file = _lcddl_global_root->first_child;
+      NULL != file;
+      file = file->next_sibling)
+ {
+  for (LcddlNode *node = file->first_child;
+       NULL != node;
+       node = node->next_sibling)
+  {
+   if (node->kind == LCDDL_NODE_KIND_declaration &&
+       lcddl_does_node_have_tag(node, tag))
+   {
+    LcddlSearchResult *search_node = calloc(1, sizeof(*search_node));
+    search_node->next = result;
+    search_node->node = node;
+   }
+  }
+ }
+ 
+ return result;
+}
+
+double
+lcddl_evaluate_expression(LcddlNode *expression)
+{
+ switch (expression->kind)
+ {
+  case LCDDL_NODE_KIND_float_literal:
+  {
+   return strtod(expression->literal.value, NULL);
+  }
+  
+  case LCDDL_NODE_KIND_integer_literal:
+  {
+   return (double)strtol(expression->literal.value, NULL, 10);
+  }
+  
+  case LCDDL_NODE_KIND_unary_operator:
+  {
+   switch (expression->unary_operator.kind)
+   {
+    case LCDDL_UN_OP_KIND_positive:
+    {
+     return lcddl_evaluate_expression(expression->unary_operator.operand);
+    }
+    
+    case LCDDL_UN_OP_KIND_negative:
+    {
+     return lcddl_evaluate_expression(expression->unary_operator.operand) * -1.0;
+    }
+    
+    case LCDDL_UN_OP_KIND_bitwise_not:
+    {
+     return (double)(~((unsigned long long)lcddl_evaluate_expression(expression->unary_operator.operand)));
+    }
+    
+    case LCDDL_UN_OP_KIND_boolean_not:
+    {
+     return (double)(!((long long)lcddl_evaluate_expression(expression->unary_operator.operand)));
+    }
+   }
+  }
+  
+  case LCDDL_NODE_KIND_binary_operator:
+  {
+   switch (expression->binary_operator.kind)
+   {
+    case LCDDL_BIN_OP_KIND_multiply:
+    {
+     return lcddl_evaluate_expression(expression->binary_operator.left) * lcddl_evaluate_expression(expression->binary_operator.right);
+    }
+    
+    case LCDDL_BIN_OP_KIND_divide:
+    {
+     return lcddl_evaluate_expression(expression->binary_operator.left) / lcddl_evaluate_expression(expression->binary_operator.right);
+    }
+    
+    case LCDDL_BIN_OP_KIND_add:
+    {
+     return lcddl_evaluate_expression(expression->binary_operator.left) + lcddl_evaluate_expression(expression->binary_operator.right);
+    }
+    
+    case LCDDL_BIN_OP_KIND_subtract:
+    {
+     return lcddl_evaluate_expression(expression->binary_operator.left) - lcddl_evaluate_expression(expression->binary_operator.right);
+    }
+    
+    case LCDDL_BIN_OP_KIND_bit_shift_left:
+    {
+     return (double)((unsigned long long)lcddl_evaluate_expression(expression->binary_operator.left) << (long long)lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_bit_shift_right:
+    {
+     return (double)((unsigned long long)lcddl_evaluate_expression(expression->binary_operator.left) >> (long long)lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_lesser_than:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) < lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_greater_than:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) > lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_lesser_than_or_equal_to:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) <= lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_greater_than_or_equal_to:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) >= lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_equality:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) == lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_not_equal_to:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) != lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_bitwise_and:
+    {
+     return (double)((unsigned long long)lcddl_evaluate_expression(expression->binary_operator.left) & (unsigned long long)lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_bitwise_xor:
+    {
+     return (double)((unsigned long long)lcddl_evaluate_expression(expression->binary_operator.left) ^ (unsigned long long)lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_bitwise_or:
+    {
+     return (double)((unsigned long long)lcddl_evaluate_expression(expression->binary_operator.left) | (unsigned long long)lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_boolean_and:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) && lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+    
+    case LCDDL_BIN_OP_KIND_boolean_or:
+    {
+     return (double)(lcddl_evaluate_expression(expression->binary_operator.left) || lcddl_evaluate_expression(expression->binary_operator.right));
+    }
+   }
+  }
+  
+  default:
+  {
+   fprintf(stderr, "Error evaluating expression.\n");
+   return 0.0;
+  }
+ }
 }
 
 #undef LOG_ERROR_BEGIN
