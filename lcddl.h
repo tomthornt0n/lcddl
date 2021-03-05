@@ -169,5 +169,7 @@ LcddlNode *lcddl_get_annotation_value(LcddlNode *node, char *tag);
 bool lcddl_does_node_have_tag(LcddlNode *node, char *tag);
 LcddlSearchResult *lcddl_find_top_level_declaration(char *name);
 LcddlSearchResult *lcddl_find_all_top_level_declarations_with_tag(char *tag);
+double lcddl_evaluate_expression(LcddlNode *expression);
+
 
 #endif

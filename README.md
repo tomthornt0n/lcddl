@@ -220,3 +220,4 @@ double lcddl_evaluate_expression(LcddlNode *expression);
 ```
 * Evaluates the expression represented by the AST pointed to by `expression` as a double precision floating point number.
 * Prints an error message to stderr if any errors were encountered.
+* Any errors evaluate to 0.0.
