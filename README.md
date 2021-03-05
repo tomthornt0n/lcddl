@@ -26,7 +26,7 @@ There are two ways to use LCDDL - as an [executable](https://github.com/tomthorn
 ### Writing a user layer:
 The user layer is a DLL which the LCDDL executable calls into, passing the root of the parsed AST.
 It must implement the function:
-``` c
+```c
 LCDDL_CALLBACK void
 lcddl_user_callback(LcddlNode *root)
 {
@@ -34,9 +34,9 @@ lcddl_user_callback(LcddlNode *root)
 }
 ```
 * `root` is the root of a tree composed entirely of `LcddlNode`s.
-* each child of `root` represents a file passed to LCDDL as input.
-* each child of the file represents a declaration within the file.
-* see `lcddl.h` for more information about `LcddlNode`
+* Each child of `root` represents a file passed to LCDDL as input.
+* Each child of the file represents a top level declaration within the file.
+* See `lcddl.h` for more information about `LcddlNode`
 
 ### Running LCDDL:
 LCDDL can be run with `./lcddl (path to user layer shared library) (input file 1) (input file 2) ...`
@@ -44,22 +44,22 @@ LCDDL can be run with `./lcddl (path to user layer shared library) (input file 1
 ## As a library:
 Alternatively, LCDDL may be used as a library
 
-```
+```c
 void lcddl_initialise(void);
 ```
 * Call this before using any other LCDDL APIs when LCDDL is being used as a library.
 
-```
+```c
 LcddlNode *lcddl_parse_file(char *filename);
 ```
 * Parses the file specified by `filename` and returns a pointer to the corresponding `LcddlNode`.
 
-```
+```c
 LcddlNode *lcddl_parse_from_memory(char *buffer, unsigned long long buffer_size);
 ```
 * Parses `buffer_size` bytes from the memory pointed to by buffer and returns a pointer to the corresponding `LcddlNode`.
 
-```
+```c
 LcddlNode *lcddl_parse_cstring(char *string);
 ```
 * Thin wrapper around `lcddl_parse_from_memory` - equivalent to `lcddl_parse_from_memory(string, strlen(string))`
@@ -69,12 +69,32 @@ LcddlNode *lcddl_parse_cstring(char *string);
 
 Each input file consists of a set of declarations.
 See `example.lcd` for an example.
-Bellow, anything surrounded by `< >` denotes it may be ommited
+> Below, anything surrounded by `< >` denotes it may be ommited
 
 ## Declarations:
 A declaration is defined as
 ```
 identifier <: <type> <= expression>> < { delcarations }>;
+```
+Some examples:
+```
+foo : int = 78 / 9;
+bar : struct {
+ child_1 := "I am a child of 'bar'";
+};
+```
+The format does not necessarily have to encode C-like datastructures. An example of the format being used to describe a level in a game:
+```
+level_1 : level {
+ player_spawn_x := 920.0;
+ player_spawn_y := 580.0;
+ bg := "assets/textures/level_1/background.png";
+ fg := "assets/textures/level_1/foreground.png";
+ music := "assets/audio/level_1.wav";
+ entities := "/assets/levels/level_1.entities";
+ exposure := 0.7;
+ kind := world;
+}
 ```
 Any declaration may be prefixed by a series of [tags](https://github.com/tomthornt0n/lcddl#tags).
                                                       
@@ -142,7 +162,7 @@ LCDDL_BIN_OP_KIND_boolean_or                      1
 ```
 
 ## Tags
-Tags are used to providea additional metadata about the structure to the user layer.
+Tags are used to provide additional metadata about the structure to the user layer.
 A tag is in the form:
 ```
 @identifier <= expression>
@@ -156,5 +176,47 @@ A tag is in the form:
 
 # User Layer Helpers
 LCDDL provides a set of helper functions to assist writing a custom layer.
-These are still a work in progress and will be documented soon.
+These are still a work in progress.
 
+```c
+void lcddl_write_node_to_file_as_c_struct(LcddlNode *node, FILE *file);
+```
+* Attempts to output the structure pointed to by `node` as a C struct to the CRT `FILE *` `file`.
+* In the case of a failure, a comment will be output instead, describing the error.
+
+```c
+void lcddl_write_node_to_file_as_c_enum(LcddlNode *node, FILE *file);
+```
+* Attempts to output the structure pointed to by `node` as a C enumeration to the CRT `FILE *` `file`.
+* In the case of a failure, a comment will be output instead, describing the error.
+
+```c
+LcddlNode *lcddl_get_annotation_value(LcddlNode *node, char *tag);
+```
+* Performs a linear search of `node`'s annotations, and return the value pointer of the first one which matches `tag`.
+* Returns NULL if the annotation is not found.
+
+```c
+bool lcddl_does_node_have_tag(LcddlNode *node, char *tag);
+```
+* Performs a linear search of `node`'s annotations.
+* Returns true if an annotation with a matching tag is found.
+* Returns false otherwise.
+
+```c
+LcddlSearchResult *lcddl_find_top_level_declaration(char *name);
+```
+* Searches the top level of every file, and returns a linked list of `LcddlSearchResult`s, pointing to any matching declarations.
+* Returns NULL if none were found.
+
+```c
+LcddlSearchResult *lcddl_find_all_top_level_declarations_with_tag(char *tag);
+```
+* Searches the top level of every file, and returns a linked list of `LcddlSearchResult`s, pointing to any declarations with annotation which matches `tag`.
+* Returns NULL if none were found.
+
+```c
+double lcddl_evaluate_expression(LcddlNode *expression);
+```
+* Evaluates the expression represented by the AST pointed to by `expression` as a double precision floating point number.
+* Prints an error message to stderr if any errors were encountered.
