@@ -74,14 +74,6 @@ typedef enum
 } LcddlNodeKind;
 
 typedef struct LcddlNode LcddlNode;
-typedef struct LcddlSearchResult LcddlSearchResult;
-
-struct LcddlSearchResult
-{
- LcddlSearchResult *next;
- LcddlNode *node;
-};
-
 struct LcddlNode
 {
  LcddlNodeKind kind;
@@ -144,6 +136,13 @@ struct LcddlNode
  };
 };
 
+typedef struct LcddlSearchResult LcddlSearchResult;
+struct LcddlSearchResult
+{
+ LcddlSearchResult *next;
+ LcddlNode *node;
+};
+
 #ifndef LCDDL_AS_LIBRARY
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -160,7 +159,7 @@ void lcddl_initialise(void);
 LcddlNode *lcddl_parse_file(char *filename);
 LcddlNode *lcddl_parse_from_memory(char *buffer, unsigned long long buffer_size);
 LcddlNode *lcddl_parse_cstring(char *string);
-
+void lcddl_free_file(LcddlNode *root);
 #endif
 
 void lcddl_write_node_to_file_as_c_struct(LcddlNode *node, FILE *file);
@@ -169,7 +168,6 @@ LcddlNode *lcddl_get_annotation_value(LcddlNode *node, char *tag);
 bool lcddl_does_node_have_tag(LcddlNode *node, char *tag);
 LcddlSearchResult *lcddl_find_top_level_declaration(char *name);
 LcddlSearchResult *lcddl_find_all_top_level_declarations_with_tag(char *tag);
-double lcddl_evaluate_expression(LcddlNode *expression);
-
+bool lcddl_is_declaration_type(LcddlNode *declaration, char *type_name);
 
 #endif
