@@ -44,6 +44,13 @@ LCDDL can be run with `./lcddl (path to user layer shared library) (input file 1
 ## As a library:
 Alternatively, LCDDL may be used as a library
 
+If you are using a single compilation unit build, this is as simple as:
+```c
+#define LCDDL_AS_LIBRARY
+#include "lcddl.c"
+```
+With a traditional build, just compile `lcddl.c` alongside the rest of your project and include `lcddl.h` where necessary. Make sure `LCDDL_AS_LIBRARY` is defined wherever the header is incuded and when the source file is compiled.
+
 ```c
 void lcddl_initialise(void);
 ```
